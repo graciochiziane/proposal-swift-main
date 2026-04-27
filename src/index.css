@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 216 30% 6%;
+    --foreground: 210 20% 90%;
+
+    --card: 215 25% 10%;
+    --card-foreground: 210 20% 90%;
+
+    --popover: 215 25% 10%;
+    --popover-foreground: 210 20% 90%;
+
+    --primary: 160 100% 50%;
+    --primary-foreground: 216 30% 6%;
+
+    --secondary: 215 20% 16%;
+    --secondary-foreground: 210 20% 85%;
+
+    --muted: 215 18% 14%;
+    --muted-foreground: 215 12% 50%;
+
+    --accent: 160 100% 50%;
+    --accent-foreground: 216 30% 6%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 15% 18%;
+    --input: 215 15% 18%;
+    --ring: 160 100% 50%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 215 25% 8%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 160 100% 50%;
+    --sidebar-primary-foreground: 216 30% 6%;
+    --sidebar-accent: 215 20% 14%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 215 15% 18%;
+    --sidebar-ring: 160 100% 50%;
+
+    --neon-glow: 0 0 20px hsl(160 100% 50% / 0.3), 0 0 40px hsl(160 100% 50% / 0.1);
+    --card-shadow: 0 4px 24px hsl(0 0% 0% / 0.3), 0 1px 4px hsl(0 0% 0% / 0.2);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer utilities {
+  .glow-primary {
+    box-shadow: var(--neon-glow);
+  }
+  .card-float {
+    box-shadow: var(--card-shadow);
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
