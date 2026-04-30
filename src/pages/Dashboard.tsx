@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Plus, FileText, ArrowRight, Trash2, TrendingUp, Calendar, BarChart3, Loader2 } from 'lucide-react';
-import { PropostaService, formatMZN } from '@/services/propostaService';
+import { PropostaService, formatMZN, formatCompactMZN } from '@/services/propostaService';
 import { useState, useMemo, useEffect } from 'react';
 import type { PropostaResumo } from '@/services/propostaService';
 import { toast } from 'sonner';
@@ -88,7 +88,7 @@ export default function Dashboard() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
             <p className="text-muted-foreground text-xs uppercase tracking-wider">Valor Total</p>
           </div>
-          <p className="text-xl md:text-2xl font-bold text-primary truncate">{formatMZN(stats.totalGeral)}</p>
+          <p className="text-xl md:text-2xl font-bold text-primary truncate">{formatCompactMZN(stats.totalGeral)}</p>
         </div>
         <div className="bg-card rounded-xl p-5 card-float border border-border">
           <div className="flex items-center gap-2 mb-1">
@@ -103,7 +103,7 @@ export default function Dashboard() {
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
             <p className="text-muted-foreground text-xs uppercase tracking-wider">Média</p>
           </div>
-          <p className="text-xl md:text-2xl font-bold truncate">{formatMZN(stats.media)}</p>
+          <p className="text-xl md:text-2xl font-bold truncate">{formatCompactMZN(stats.media)}</p>
         </div>
       </div>
 
