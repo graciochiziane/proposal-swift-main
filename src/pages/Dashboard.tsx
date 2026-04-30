@@ -120,21 +120,22 @@ export default function Dashboard() {
             {propostas.slice(0, 10).map((p, i) => (
               <div
                 key={p.id}
-                className="bg-card rounded-xl p-4 md:p-5 border border-border card-float flex items-center justify-between gap-4 group hover:border-primary/30 transition-colors animate-fade-up"
+                className="bg-card rounded-xl p-4 md:p-5 border border-border card-float group hover:border-primary/30 transition-colors animate-fade-up"
                 style={{ animationDelay: `${200 + i * 60}ms` }}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-mono">{p.numero}</span>
-                    <span className="text-xs text-muted-foreground/40">·</span>
-                    <p className="font-medium truncate">{p.clienteNome}</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{new Date(p.data).toLocaleDateString('pt-BR')}</p>
+                <div className="flex items-center justify-between gap-4">
+                  <p className="font-semibold truncate min-w-0">{p.clienteNome}</p>
+                  <p className="text-primary font-bold whitespace-nowrap text-sm md:text-base">{formatMZN(p.total)}</p>
                 </div>
-                <p className="text-primary font-bold whitespace-nowrap">{formatMZN(p.total)}</p>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => navigate(`/proposta/${p.id}`)} className="p-2 rounded-lg hover:bg-secondary transition-colors"><ArrowRight className="h-4 w-4" /></button>
-                  <button onClick={() => handleRemover(p.id)} className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="h-4 w-4" /></button>
+                <div className="flex items-center justify-between gap-4 mt-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-muted-foreground font-mono">{p.numero}</span>
+                    <span className="text-xs text-muted-foreground">{new Date(p.data).toLocaleDateString('pt-BR')}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => navigate(`/proposta/${p.id}`)} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><ArrowRight className="h-4 w-4" /></button>
+                    <button onClick={() => handleRemover(p.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="h-4 w-4" /></button>
+                  </div>
                 </div>
               </div>
             ))}
