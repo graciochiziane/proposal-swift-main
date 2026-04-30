@@ -19,6 +19,12 @@ interface ProposalWithClient extends ProposalRow {
 // -------------------------------------------
 // Utility: formatar valor como MZN
 // -------------------------------------------
+
+export function formatCompactMZN(valor: number): string {
+  if (valor >= 1_000_000) return (valor / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M MZN";
+  if (valor >= 1_000) return (valor / 1_000).toFixed(2).replace(/\.?0+$/, "") + "K MZN";
+  return formatMZN(valor);
+}
 export function formatMZN(value: number): string {
   return new Intl.NumberFormat('pt-MZ', {
     style: 'currency',
