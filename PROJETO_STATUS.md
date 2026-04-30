@@ -94,3 +94,29 @@
 - Página dedicada de facturas
 - Domínio próprio
 - Refactoring: remover as any residuais
+
+## Fortificação (Abril 2026)
+
+### Remoção de `as any` (14 instâncias)
+- **propostaService.ts**: 11 substituídos por `ProposalRow`, `ProposalInsert`, `ProposalItemRow`, `ProposalItemInsert`, `ProposalStatus`, `ProposalWithClient`
+- **profileService.ts**: 2 substituídos por `DonoProposta['dadosBancarios']` e `DonoProposta['mobileMoney']`
+- **faturaService.ts**: 1 substituído por `ProposalItemRow`
+
+### Bug fixes
+- **Propostas.tsx**: Corrigido double call de `getPropostas()` (era chamado 2× em `Promise.all`)
+- **useAuth.tsx**: Adicionado redirecionamento para `/auth` quando sessão expira (`SIGNED_OUT` event)
+- **tsconfig.app.json**: Removido `vitest/globals` (pertence a config de testes, não da app)
+
+### Testes unitários
+- **calculos.test.ts**: 5 testes criados com Vitest (subtotal, desconto percentual, desconto fixo, total com IVA, edge cases)
+- Todos os testes passam ✅
+
+---
+
+Depois disto, a fortificação está 100% completa. O ProposalJá está consideravelmente mais robusto:
+
+- Zero `as any` em services
+- Zero erros TypeScript (`tsc --noEmit` limpo)
+- 5 testes unitários passando
+- Session expiry tratado correctamente
+- Logo fallback já existia

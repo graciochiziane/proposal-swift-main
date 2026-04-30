@@ -1,6 +1,20 @@
 import { supabase } from '@/integrations/supabase/client';
 import { calcularSubtotal, calcularTotal } from '@/lib/calculos';
 import type { ItemProposta, DescontoTipo, Proposta } from '@/types';
+import type { Database } from '@/integrations/supabase/types';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+// ── Supabase type aliases ──
+type ProposalRow = Database['public']['Tables']['proposals']['Row'];
+type ProposalInsert = Database['public']['Tables']['proposals']['Insert'];
+type ProposalItemRow = Database['public']['Tables']['proposal_items']['Row'];
+type ProposalItemInsert = Database['public']['Tables']['proposal_items']['Insert'];
+type ProposalStatus = Database['public']['Enums']['proposal_status'];
+
+// Interface para o resultado do JOIN proposals + clients
+interface ProposalWithClient extends ProposalRow {
+  clients?: { id: string; nome: string; email?: string | null; telefone?: string | null } | null;
+}
 
 // -------------------------------------------
 // Utility: formatar valor como MZN
@@ -93,8 +107,8 @@ export const PropostaService = {
       throw error;
     }
 
-    return (data || []).map((p: any) => {
-      const client = p.clients as unknown as ClientRelation;
+    return (data || []).map((p: ProposalWithClient) => {
+      const client = p.clients as ClientRelation | null;
       return {
         id: p.id,
         numero: p.numero || '—',
@@ -127,10 +141,10 @@ export const PropostaService = {
 
     if (!data) return null;
 
-    const dbItems = (data.proposal_items || []) as unknown as DbProposalItem[];
-    const items: any[] = dbItems
+    const dbItems = (data.proposal_items || []) as ProposalItemRow[];
+    const items: ItemProposta[] = dbItems
       .sort((a, b) => a.ordem - b.ordem)
-      .map((item: any) => ({
+      .map((item: ProposalItemRow) => ({
         id: item.id,
         nome: item.nome,
         quantidade: Number(item.quantidade),
@@ -149,8 +163,8 @@ export const PropostaService = {
       descontoValor: Number(data.desconto_valor),
       ivaPercentual: Number(data.iva_percentual),
       total: Number(data.total),
-      status: data.status as any,
-      clienteSnapshot: data.cliente_snapshot as any,
+      status: data.status as Proposta['status'],
+      clienteSnapshot: data.cliente_snapshot as Proposta['clienteSnapshot'],
       itens: items,
       created_at: data.created_at,
     } as PropostaCompleta;
@@ -204,7 +218,7 @@ export const PropostaService = {
         iva_percentual: input.ivaPercentual,
         total: totais.total,
         cliente_snapshot: clienteSnapshot,
-      } as any])
+      } as ProposalInsert])
       .select()
       .single();
 
@@ -231,7 +245,7 @@ export const PropostaService = {
 
       const { error: itemsError } = await supabase
         .from('proposal_items')
-        .insert(itemsToInsert as any);
+        .insert(itemsToInsert as ProposalItemInsert[]);
 
       if (itemsError) {
         console.error('Erro ao inserir items:', itemsError);
@@ -251,8 +265,8 @@ export const PropostaService = {
       descontoValor: Number(proposta.desconto_valor),
       ivaPercentual: Number(proposta.iva_percentual),
       total: Number(proposta.total),
-      status: proposta.status as any,
-      clienteSnapshot: proposta.cliente_snapshot as any,
+      status: proposta.status as Proposta['status'],
+      clienteSnapshot: proposta.cliente_snapshot as ProposalInsert['cliente_snapshot'],
       itens: itens.map(item => ({
         id: '',
         nome: item.nome,
@@ -291,7 +305,7 @@ export const PropostaService = {
         desconto_valor: input.descontoValor,
         iva_percentual: input.ivaPercentual,
         total: totais.total,
-      } as any)
+      } as Partial<ProposalRow>)
       .eq('id', id)
       .eq('owner_id', userData.user.id);
 
@@ -314,7 +328,7 @@ export const PropostaService = {
 
       const { error: itemsError } = await supabase
         .from('proposal_items')
-        .insert(itemsToInsert as any);
+        .insert(itemsToInsert as ProposalItemInsert[]);
 
       if (itemsError) {
         console.error('Erro ao atualizar items:', itemsError);

@@ -56,16 +56,14 @@ export default function Propostas() {
 
   async function loadData() {
     try {
-      const [dataPropostas, dataFaturas] = await Promise.all([
-        PropostaService.getPropostas(),
-        Promise.all(
-          (await PropostaService.getPropostas()).map((p) =>
-            getFaturasPorProposta(p.id).catch(() => [] as Fatura[])
-          )
-        ),
-      ]);
-      setPropostas(dataPropostas);
-      setFaturas(dataFaturas.flat());
+      const propostasData = await PropostaService.getPropostas();
+
+      const faturasData = await Promise.all(
+        propostasData.map((p) => getFaturasPorProposta(p.id).catch(() => [] as Fatura[]))
+      );
+
+      setPropostas(propostasData);
+      setFaturas(faturasData.flat());
     } catch (error) {
       console.error(error);
       toast.error('Erro ao carregar dados');

@@ -45,8 +45,8 @@ export const ProfileService = {
       endereco: data.endereco || '',
       logotipo: logotipoUrl,
       corPrimaria: data.cor_primaria || '#0B5394',
-      dadosBancarios: (data.dados_bancarios as any) || { ativo: false, banco: '', numeroConta: '', nib: '' },
-      mobileMoney: (data.mobile_money as any) || { mpesa: { ativo: false, numero: '' }, emola: { ativo: false, numero: '' }, mkesh: { ativo: false, numero: '' } },
+      dadosBancarios: data.dados_bancarios as DonoProposta['dadosBancarios'],
+      mobileMoney: data.mobile_money as DonoProposta['mobileMoney'],
     };
   },
 

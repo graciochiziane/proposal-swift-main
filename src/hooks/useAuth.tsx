@@ -23,9 +23,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Set up listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess);
       setUser(sess?.user ?? null);
+
+      // Redireccionar para login quando a sessão expira ou é invalidada
+      if (event === 'SIGNED_OUT' && window.location.pathname !== '/auth') {
+        window.location.href = '/auth';
+      }
     });
 
     // THEN fetch existing session
