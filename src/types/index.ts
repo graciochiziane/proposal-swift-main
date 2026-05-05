@@ -37,7 +37,7 @@ export interface Proposta {
   created_at: string;
 }
 
-export type PDFTemplate = 'classic' | 'modern' | 'executive';
+export type PDFTemplate = 'classic' | 'modern' | 'executive' | 'sleek' | 'sidebar' | 'business';
 
 export interface DadosBancarios {
   ativo: boolean;

@@ -1,11 +1,18 @@
 import type { Proposta, Cliente, DonoProposta } from '@/types';
+import type { NarrativeSection } from './types';
+import { modernTheme } from './themes';
 import {
   createContext, drawItemsTable, drawTotals,
   drawPaymentMethods, drawFooter, lighten,
 } from './shared';
 
-export async function renderModern(proposta: Proposta, cliente?: Cliente, dono?: DonoProposta) {
-  const ctx = createContext(proposta, cliente, dono);
+export async function renderModern(
+  proposta: Proposta,
+  cliente?: Cliente,
+  dono?: DonoProposta,
+  _narrative?: NarrativeSection[],
+) {
+  const ctx = createContext(proposta, cliente, dono, modernTheme);
   const { doc, margin, pageWidth, primary } = ctx;
   let y = 0;
 

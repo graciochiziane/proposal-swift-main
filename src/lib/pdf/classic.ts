@@ -1,11 +1,18 @@
 import type { Proposta, Cliente, DonoProposta } from '@/types';
+import type { NarrativeSection } from './types';
+import { classicTheme } from './themes';
 import {
   createContext, drawItemsTable, drawTotals,
   drawPaymentMethods, drawFooter,
 } from './shared';
 
-export async function renderClassic(proposta: Proposta, cliente?: Cliente, dono?: DonoProposta) {
-  const ctx = createContext(proposta, cliente, dono);
+export async function renderClassic(
+  proposta: Proposta,
+  cliente?: Cliente,
+  dono?: DonoProposta,
+  _narrative?: NarrativeSection[],
+) {
+  const ctx = createContext(proposta, cliente, dono, classicTheme);
   const { doc, margin, pageWidth, contentWidth, primary } = ctx;
   let y = margin;
 

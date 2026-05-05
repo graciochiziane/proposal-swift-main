@@ -199,9 +199,16 @@ export default function ResumoProposta() {
             value={template}
             onChange={e => setTemplate(e.target.value as PDFTemplate)}
           >
-            <option value="classic">Clássico</option>
-            <option value="modern">Moderno</option>
-            <option value="executive">Executivo</option>
+            <optgroup label="Gratuito">
+              <option value="classic">Clássico</option>
+              <option value="modern">Moderno</option>
+              <option value="executive">Executivo</option>
+            </optgroup>
+            <optgroup label="PRO">
+              <option value="sleek">Sleek</option>
+              <option value="sidebar">Sidebar</option>
+              <option value="business">Business</option>
+            </optgroup>
           </select>
           <button
             onClick={handlePDF}

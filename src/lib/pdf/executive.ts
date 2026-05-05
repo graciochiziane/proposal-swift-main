@@ -1,11 +1,18 @@
 import type { Proposta, Cliente, DonoProposta } from '@/types';
+import type { NarrativeSection } from './types';
+import { executiveTheme } from './themes';
 import {
   createContext, drawItemsTable, drawTotals,
   drawPaymentMethods, drawFooter, lighten,
 } from './shared';
 
-export async function renderExecutive(proposta: Proposta, cliente?: Cliente, dono?: DonoProposta) {
-  const ctx = createContext(proposta, cliente, dono);
+export async function renderExecutive(
+  proposta: Proposta,
+  cliente?: Cliente,
+  dono?: DonoProposta,
+  _narrative?: NarrativeSection[],
+) {
+  const ctx = createContext(proposta, cliente, dono, executiveTheme);
   const { doc, margin, pageWidth, contentWidth, primary } = ctx;
   let y = 0;
 
