@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
+import { gerarPDFNarrativa } from '@/lib/pdf';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,7 +15,7 @@ import { toast } from 'sonner';
 import {
   Loader2, Sparkles, FileText, RotateCw, Save,
   FileDown, ArrowLeft, Eye, EyeOff, Info, Zap,
-  CheckCircle2, ChevronRight,
+  CheckCircle2, ChevronRight, Download, FileSpreadsheet,
 } from 'lucide-react';
 import { calcularTotal } from '@/lib/calculos';
 import type { PropostaCompleta } from '@/services/propostaService';
@@ -211,52 +212,32 @@ export default function GerarPropostaIA() {
   };
 
   // ---- Export (Doc A = proposta narrativa, Doc B = cotacao) ----
-  const handleExportProposta = () => {
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportProposta = async () => {
     if (!proposta || !dono || !seccoes) return;
-    // TODO: Implementar PDF narrativo com drawNarrativeSections()
-    // Por agora, exportar como texto num ficheiro
-    const content = buildTextExport(seccoes, proposta.numero || '');
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Proposta-${proposta.numero || 'draft'}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Proposta exportada (texto)');
+    setIsExporting(true);
+    try {
+      await gerarPDFNarrativa(proposta, dono, seccoes);
+      if (propostaAiId) {
+        await propostaAiService.markExported(propostaAiId);
+      }
+      toast.success('Proposta comercial exportada (PDF)');
+    } catch (err) {
+      console.error('Erro ao exportar PDF narrativo:', err);
+      toast.error('Erro ao gerar PDF da proposta');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleExportCotacao = () => {
     if (!proposta || !dono) return;
-    toast.info('Abra a cotacao e use o botao PDF para exportar');
+    toast.info('A abrir cotacao para exportar PDF...');
     navigate(`/proposta/${id}`);
   };
 
-  // ---- Build text export ----
-  const buildTextExport = (sections: Record<string, string>, ref: string): string => {
-    const lines = [
-      `PROPOSTA COMERCIAL`,
-      `Ref: ${ref}`,
-      `Cliente: ${proposta?.clienteSnapshot?.nome || ''}`,
-      `${proposta?.clienteSnapshot?.empresa || ''}`,
-      ``,
-      `---`,
-      ``,
-    ];
-
-    for (const [key, value] of Object.entries(sections)) {
-      lines.push(`${(SECTION_LABELS[key] || key).toUpperCase()}`);
-      lines.push('');
-      lines.push(value);
-      lines.push('');
-      lines.push('---');
-      lines.push('');
-    }
-
-    return lines.join('\n');
-  };
-
-  // ---- Loading ----
+  // ---- Action Bar ----
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -528,13 +509,27 @@ export default function GerarPropostaIA() {
         <div className="flex items-center gap-2">
           {seccoes && !isGenerating && (
             <Fragment>
-              <Button variant="outline" size="sm" onClick={handleExportCotacao} className="gap-1.5">
-                <FileDown className="h-3.5 w-3.5" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportCotacao}
+                className="gap-1.5"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" />
                 Cotacao (PDF)
               </Button>
-              <Button size="sm" onClick={handleExportProposta} className="gap-1.5">
-                <FileText className="h-3.5 w-3.5" />
-                Proposta
+              <Button
+                size="sm"
+                onClick={handleExportProposta}
+                disabled={isExporting}
+                className="gap-1.5 bg-violet-600 hover:bg-violet-700"
+              >
+                {isExporting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                Proposta (PDF)
               </Button>
             </Fragment>
           )}

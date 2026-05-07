@@ -3,14 +3,14 @@ import type { NarrativeSection } from './types';
 import { classicTheme } from './themes';
 import {
   createContext, drawItemsTable, drawTotals,
-  drawPaymentMethods, drawFooter,
+  drawPaymentMethods, drawFooter, drawNarrativeSections,
 } from './shared';
 
 export async function renderClassic(
   proposta: Proposta,
   cliente?: Cliente,
   dono?: DonoProposta,
-  _narrative?: NarrativeSection[],
+  narrative?: NarrativeSection[],
 ) {
   const ctx = createContext(proposta, cliente, dono, classicTheme);
   const { doc, margin, pageWidth, contentWidth, primary } = ctx;
@@ -85,6 +85,12 @@ export async function renderClassic(
   if (cliente?.telefone) { doc.text(cliente.telefone, rightX, cy); cy += 4; }
 
   y = Math.max(ey, cy) + 10;
+
+  // ── Narrative sections (if AI proposal) ──
+  if (narrative && narrative.length > 0) {
+    y = drawNarrativeSections(ctx, y);
+    y += 4;
+  }
 
   // ── Items table ──
   const tableEndY = await drawItemsTable(ctx, y);

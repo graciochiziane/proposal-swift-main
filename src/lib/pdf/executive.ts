@@ -3,14 +3,14 @@ import type { NarrativeSection } from './types';
 import { executiveTheme } from './themes';
 import {
   createContext, drawItemsTable, drawTotals,
-  drawPaymentMethods, drawFooter, lighten,
+  drawPaymentMethods, drawFooter, drawNarrativeSections, lighten,
 } from './shared';
 
 export async function renderExecutive(
   proposta: Proposta,
   cliente?: Cliente,
   dono?: DonoProposta,
-  _narrative?: NarrativeSection[],
+  narrative?: NarrativeSection[],
 ) {
   const ctx = createContext(proposta, cliente, dono, executiveTheme);
   const { doc, margin, pageWidth, contentWidth, primary } = ctx;
@@ -103,6 +103,12 @@ export async function renderExecutive(
   doc.setLineWidth(0.2);
   doc.line(margin + 32, y, pageWidth - margin, y);
   y += 8;
+
+  // ── Narrative sections (if AI proposal) ──
+  if (narrative && narrative.length > 0) {
+    y = drawNarrativeSections(ctx, y);
+    y += 4;
+  }
 
   // ── Items table ──
   const tableEndY = await drawItemsTable(ctx, y);

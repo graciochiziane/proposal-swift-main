@@ -48,6 +48,7 @@ export const classicTheme: PdfTheme = {
     showBranding: true,
     showDate: true,
   },
+  narrative: { enabled: true },
 };
 
 // ── Modern Theme ──
@@ -77,6 +78,7 @@ export const modernTheme: PdfTheme = {
     showBranding: true,
     showDate: true,
   },
+  narrative: { enabled: true },
 };
 
 // ── Executive Theme ──
@@ -106,6 +108,7 @@ export const executiveTheme: PdfTheme = {
     showBranding: true,
     showDate: true,
   },
+  narrative: { enabled: true },
 };
 
 // ── Sleek Theme ──
@@ -147,6 +150,7 @@ export const sleekTheme: PdfTheme = {
     textColor: [120, 130, 145],
     fontSize: 7,
   },
+  narrative: { enabled: true, headingUnderline: true },
 };
 
 // ── Sidebar Theme ──
@@ -186,6 +190,7 @@ export const sidebarTheme: PdfTheme = {
     showDate: true,
     textColor: [150, 160, 170],
   },
+  narrative: { enabled: true },
 };
 
 // ── Business Theme ──
@@ -227,6 +232,7 @@ export const businessTheme: PdfTheme = {
     textColor: [130, 135, 145],
     fontSize: 7,
   },
+  narrative: { enabled: true, headingUnderline: true },
 };
 
 // ── Helper: get theme by ID ──

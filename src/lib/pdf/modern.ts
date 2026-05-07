@@ -3,14 +3,14 @@ import type { NarrativeSection } from './types';
 import { modernTheme } from './themes';
 import {
   createContext, drawItemsTable, drawTotals,
-  drawPaymentMethods, drawFooter, lighten,
+  drawPaymentMethods, drawFooter, drawNarrativeSections, lighten,
 } from './shared';
 
 export async function renderModern(
   proposta: Proposta,
   cliente?: Cliente,
   dono?: DonoProposta,
-  _narrative?: NarrativeSection[],
+  narrative?: NarrativeSection[],
 ) {
   const ctx = createContext(proposta, cliente, dono, modernTheme);
   const { doc, margin, pageWidth, primary } = ctx;
@@ -97,6 +97,12 @@ export async function renderModern(
     doc.text(line, margin, y); y += 4;
   }
   y += 8;
+
+  // ── Narrative sections (if AI proposal) ──
+  if (narrative && narrative.length > 0) {
+    y = drawNarrativeSections(ctx, y);
+    y += 4;
+  }
 
   // ── Items table ──
   const tableEndY = await drawItemsTable(ctx, y);
