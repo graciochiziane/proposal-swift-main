@@ -12,6 +12,7 @@ import Catalogo from "@/pages/Catalogo";
 import CriarProposta from "@/pages/CriarProposta";
 import Propostas from "@/pages/Propostas";
 import ResumoProposta from "@/pages/ResumoProposta";
+import GerarPropostaIA from "@/pages/GerarPropostaIA";
 import Configuracoes from "@/pages/Configuracoes";
 import Admin from "@/pages/Admin";
 import Auth from "@/pages/Auth";
@@ -48,6 +49,7 @@ const App = () => (
                       <Route path="/proposta/nova" element={<CriarProposta />} />
                       <Route path="/proposta/editar/:id" element={<CriarProposta />} />
                       <Route path="/proposta/:id" element={<ResumoProposta />} />
+                      <Route path="/proposta/:id/gerar-ia" element={<GerarPropostaIA />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/admin" element={<Admin />} />
                       <Route path="*" element={<NotFound />} />

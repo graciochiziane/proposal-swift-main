@@ -5,7 +5,7 @@ import type { PropostaCompleta } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { calcularTotal } from '@/lib/calculos';
 import { gerarPDF } from '@/lib/pdf';
-import { FileDown, Pencil, Copy, Loader2 } from 'lucide-react';
+import { FileDown, Pencil, Copy, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { converterPropostaEmFactura, getFaturasPorProposta, atualizarStatusFatura } from '@/services/faturaService';
 import type { PDFTemplate, Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
@@ -210,6 +210,13 @@ export default function ResumoProposta() {
               <option value="business">Business</option>
             </optgroup>
           </select>
+          <button
+            onClick={() => navigate(`/proposta/${proposta.id}/gerar-ia`)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold transition-all"
+          >
+            <Sparkles className="h-4 w-4" />
+            Proposta IA
+          </button>
           <button
             onClick={handlePDF}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition-all"
