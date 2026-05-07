@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FileText, Users, LayoutDashboard, Menu, X, Settings, Package } from 'lucide-react';
 import UserProfile from '@/components/UserProfile';
+import { useActivityTracker } from '@/hooks/useActivityTracker';
 
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -15,6 +16,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Regista actividade do utilizador em cada página
+  useActivityTracker();
 
   return (
     <div className="min-h-screen bg-background">
