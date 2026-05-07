@@ -6,6 +6,7 @@
 - Deploy: Vercel (https://propostaja2.vercel.app)
 - Supabase: https://ytbgfrbhyclnfdftmnoy.supabase.co
 - Admin: graciochiziane@gmail.com
+- GitHub: https://github.com/graciochiziane/proposal-swift-main
 
 ## Módulos Implementados
 
@@ -54,10 +55,16 @@
 - Configuracoes (perfil + logo upload/remove)
 - Admin, Auth, ForgotPassword, ResetPassword, NotFound
 
-### PDF Templates (src/lib/pdf/)
-- classic.ts, modern.ts, executive.ts
+### PDF Templates (src/lib/pdf/) — Sistema de Temas
+- **6 templates** registados via `registry.ts`
+- **3 gratuitos:** classic, modern, executive
+- **3 PRO:** sleek, sidebar, business
+- Sistema de temas (`PdfTheme`): cada template controla aparência de tabela, totais, pagamento, footer
+- `shared.ts` refacturado: `createContext()` aceita tema opcional, funções são theme-aware com defaults
+- `drawNarrativeSections()` pronta para propostas geradas por IA
 - Mostram sempre PROPOSTA (sem logica FATURA)
 - Usam proposta.numero (PROP-XXXX)
+- Ver secção "Sistema de Temas PDF" abaixo para detalhes técnicos
 
 ## Enums do Banco
 - proposal_status: rascunho, enviada, aceite, rejeitada
@@ -83,6 +90,16 @@
 - Tipos gerados: src/integrations/supabase/types.ts (regenerar após migrations)
 - DescontoTipo: percentual | valor (NAO fixo)
 
+## Regras Criticas (PDF)
+- jsPDF: NAO usar hex strings directos — usar `hexToRgb()` para converter para `[r,g,b]`
+- jsPDF: NAO usar `doc.triangle()` — nao existe na API
+- jsPDF: NAO usar alpha em `setFillColor` — so arrays RGB `[r,g,b]`
+- jsPDF: NAO usar emojis no PDF
+- `darken()` e `lighten()` existem em `shared.ts`
+- `secondary` NAO existe no contexto PDF
+- Até 3 `as any` aceitáveis em `shared.ts` para contornar tipagem jsPDF
+- Templates antigos passam tema via `createContext(proposta, cliente, dono, tema)` — 4º parametro opcional
+
 ## Deploy
 - Vercel via GitHub (branch main)
 - vercel.json com SPA rewrites na raiz
@@ -90,10 +107,13 @@
 
 ## Pendente
 - TanStack Query (instalado mas nao usado)
-- Vitest testes unitários
 - Página dedicada de facturas
 - Domínio próprio
-- Refactoring: remover as any residuais
+- Refactoring: remover as any residuais (restam em Propostas.tsx, faturaService.ts, profileService.ts, propostaService.ts)
+- Integração dos docs legais na app (Termos de Uso + Política de Privacidade — ficheiros criados mas nao integrados)
+- Sistema de planos e limites (Free: 5 propostas/mês; PRO: 250 MTn/mês)
+- Gateway de pagamento (M-Pesa, e-Mola)
+- Motor de Propostas IA (especificação pronta, depende do sistema de temas)
 
 ## Fortificação (Abril 2026)
 
@@ -109,14 +129,126 @@
 
 ### Testes unitários
 - **calculos.test.ts**: 5 testes criados com Vitest (subtotal, desconto percentual, desconto fixo, total com IVA, edge cases)
-- Todos os testes passam ✅
+- Todos os testes passam
 
 ---
 
-Depois disto, a fortificação está 100% completa. O ProposalJá está consideravelmente mais robusto:
+## Sistema de Temas PDF (Maio 2026)
 
-- Zero `as any` em services
-- Zero erros TypeScript (`tsc --noEmit` limpo)
-- 5 testes unitários passando
-- Session expiry tratado correctamente
-- Logo fallback já existia
+### Motivação
+Os templates originais (classic, modern, executive) partilhavam as mesmas funções rígidas de `shared.ts` (`drawItemsTable`, `drawTotals`, `drawPaymentMethods`, `drawFooter`). Todas as propostas se pareciam 90% iguais — diferiam apenas no header. O sistema de temas resolve isto permitindo que cada template defina o seu estilo visual.
+
+### Arquitectura
+
+```
+src/lib/pdf/
+├── types.ts        ← PdfTheme, NarrativeSection, TemplateEntry (interfaces)
+├── themes.ts       ← 7 temas predefinidos + getTheme(id)
+├── shared.ts       ← Motor com funções theme-aware + drawNarrativeSections
+├── registry.ts     ← Registro centralizado de templates (Map)
+├── classic.ts      ← Template "Clássico" (gratuito)
+├── modern.ts       ← Template "Moderno" (gratuito)
+├── executive.ts    ← Template "Executivo" (gratuito)
+├── sleek.ts        ← Template "Sleek" (PRO) — colorido, badges
+├── sidebar.ts      ← Template "Sidebar" (PRO) — barra lateral escura
+├── business.ts     ← Template "Business" (PRO) — minimalista
+└── index.ts        ← gerarPDF() unificado via registry
+```
+
+### Fluxo
+```
+gerarPDF(proposta, cliente, dono, 'sleek')
+  → getTemplate('sleek')       // registry.ts
+  → renderSleek(proposta, ...)  // sleek.ts
+    → createContext(..., sleekTheme)  // shared.ts (passa tema)
+    → drawItemsTable(ctx)       // lê ctx.theme.table
+    → drawTotals(ctx)           // lê ctx.theme.totals
+    → drawPaymentMethods(ctx)   // lê ctx.theme.payment
+    → drawFooter(ctx)           // lê ctx.theme.footer
+```
+
+### PdfTheme — Interface principal
+Cada tema controla:
+- **table**: headerBg, headerColor, altRowBg, borderColor, borderWidth, fontSize, columnRatios
+- **totals**: position (right/left/center), showCard, cardBg, totalHighlight, totalBg, totalTextColor
+- **payment**: position (inline/cards/sidebar/hidden), style (list/compact/detailed), showReferenceNote
+- **footer**: style (minimal/branded/detailed), showBranding, showDate, textColor
+- **narrative**: enabled, headingFont/Size/Color, bodyFont/Size/Color, bulletStyle, sectionSeparator
+
+### Templates disponíveis
+
+| ID | Nome | Categoria | Características |
+|----|------|-----------|-----------------|
+| classic | Clássico | Gratuito | Barra de cabeçalho colorida, duas colunas |
+| modern | Moderno | Gratuito | Centralizado, fundo claro, elegante |
+| executive | Executivo | Gratuito | Barra de acento lateral, separadores decorativos |
+| sleek | Sleek | PRO | Stripe de acento, badge de status, totais em cartão, pagamento em cards |
+| sidebar | Sidebar | PRO | Barra lateral escura com dados empresa + pagamento integrado, tabela grid |
+| business | Business | PRO | Minimalista, grayscale, cabeçalho limpo, footer detalhado |
+
+### Compatibilidade
+- 100% backward compatible — templates antigos funcionam exactamente como antes
+- `createContext()` sem tema = comportamento original (defaults)
+- `gerarPDF()` sem `narrative` = fluxo normal de cotação
+
+### Preparado para IA
+- `drawNarrativeSections(ctx, startY)` já implementada em `shared.ts`
+- Aceita array de `NarrativeSection[]` (titulo, texto, itens)
+- Suporta page breaks automáticos, bullets, separadores de secção
+- Estilização via `PdfTheme.narrative`
+- Apenas activada quando `narrative.enabled = true` no tema
+
+---
+
+## Documentação Legal (Maio 2026)
+
+### Ficheiros criados (nao integrados na app)
+- `ProposalJa-Termos-de-Uso.docx` — 13 cláusulas com placeholders
+- `ProposalJa-Politica-de-Privacidade.docx` — 12 cláusulas, Lei 9/2022 compliant
+
+### Estado
+- Criados como ficheiros .docx para revisão
+- NAO integrados na app (sem links, sem checkbox de aceitação)
+- Empresa ainda NAO registada (sem NUIT/Alvará)
+- Precisa de: actualização dos placeholders, integração como rotas na app, checkbox no registo
+
+---
+
+## Roadmap (Prioridade)
+
+### Fase 1 — Concluída
+- [x] Sistema de Temas PDF (types, themes, shared refactor, registry, 3 novos templates)
+- [x] Push para GitHub e deploy na Vercel
+- [ ] Testar templates no site após deploy
+
+### Fase 2 — UI de Templates
+- [ ] Modal de seleção visual de templates (thumbnails + preview)
+- [ ] Thumbnails gerados automaticamente para cada template
+- [ ] Indicador "PRO" nos templates pagos
+
+### Fase 3 — Motor de Propostas IA
+- [ ] Formulário wizard: setor, problema, impacto, solução, benefícios, módulos, cronograma
+- [ ] API route `/api/generate-proposal` (server-side LLM call)
+- [ ] System prompt baseado na especificação fornecida (anti-alucinação, estrutura obrigatória)
+- [ ] Preview editável das secções geradas
+- [ ] Templates narrativos com `drawNarrativeSections()`
+- [ ] Cache de output em `proposta_ai_output`
+
+### Fase 4 — Monetização
+- [ ] Sistema de planos (Free: 5 propostas/mês; PRO: ilimitado, 250 MTn/mês)
+- [ ] Rate limiting por plano
+- [ ] Gateway M-Pesa / e-Mola
+- [ ] Upload de logo (PRO)
+- [ ] Multi-utilizador (PRO: até 3)
+
+### Fase 5 — Documentação Legal e Compliance
+- [ ] Preencher placeholders nos docs legais
+- [ ] Integrar Termos de Uso + Política de Privacidade na app
+- [ ] Checkbox de aceitação no registo
+- [ ] Registo da empresa (NUIT/Alvará)
+
+### Backlog
+- [ ] TanStack Query (instalado, nao usado)
+- [ ] Página dedicada de facturas
+- [ ] Domínio próprio (propostaja.co.mz)
+- [ ] Remover `as any` residuais em Propostas.tsx, faturaService.ts, profileService.ts, propostaService.ts
