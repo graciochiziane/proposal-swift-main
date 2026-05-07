@@ -105,15 +105,13 @@
 - vercel.json com SPA rewrites na raiz
 - Supabase Site URL: https://propostaja2.vercel.app
 
-## Pendente
-- TanStack Query (instalado mas nao usado)
-- Página dedicada de facturas
-- Domínio próprio
-- Refactoring: remover as any residuais (restam em Propostas.tsx, faturaService.ts, profileService.ts, propostaService.ts)
-- Integração dos docs legais na app (Termos de Uso + Política de Privacidade — ficheiros criados mas nao integrados)
-- Sistema de planos e limites (Free: 5 propostas/mês; PRO: 250 MTn/mês)
-- Gateway de pagamento (M-Pesa, e-Mola)
-- Motor de Propostas IA (especificação pronta, depende do sistema de temas)
+## Pendente (Resumo)
+Veja a seccao "Roadmap" para detalhes completos por fase.
+- Fase 2: UI de Templates (adiada)
+- Fase 3: Motor de Propostas IA (em curso — ver Fase 3 abaixo)
+- Fase 4: Monetizacao (dependente da Fase 3)
+- Fase 5: Documentacao Legal e Compliance
+- Backlog: TanStack Query, paginas facturas, dominio proprio, as any residuais, O3/O4/T2/T5
 
 ## Fortificação (Abril 2026)
 
@@ -216,10 +214,11 @@ Cada tema controla:
 
 ## Roadmap (Prioridade)
 
-### Fase 1 — Concluída
+### Fase 1 — Concluída (80%)
 - [x] Sistema de Temas PDF (types, themes, shared refactor, registry, 3 novos templates)
 - [x] Push para GitHub e deploy na Vercel
-- [ ] Testar templates no site após deploy
+- [x] Testar templates no site após deploy (3 templates testados, ~80% bem)
+- [ ] 20% ajustes menores nos templates (pendente)
 
 ### Fase 2 — UI de Templates
 - [ ] Modal de seleção visual de templates (thumbnails + preview)
@@ -227,12 +226,47 @@ Cada tema controla:
 - [ ] Indicador "PRO" nos templates pagos
 
 ### Fase 3 — Motor de Propostas IA
-- [ ] Formulário wizard: setor, problema, impacto, solução, benefícios, módulos, cronograma
+
+#### Arquitectura: Dois Documentos Separados
+O sistema gera dois PDFs distintos com a mesma referência (ex: PROP-202605-0001):
+
+| Documento | Conteúdo | Gerado por | Público-alvo |
+|---|---|---|---|
+| **A — Proposta Comercial/Técnica** | Narrativa AI (8 secções) + Resumo de Investimento | Motor de Propostas IA | Decisores técnicos e de negócio |
+| **B — Cotação Financeira** | Tabela de itens + Totais + Pagamento | Sistema existente | Departamento financeiro/compras |
+
+- Doc B = Cotação actual (já funcional) — pode receber sufixo `-FIN` no header
+- Doc A = Novo PDF narrativo — texto formatado, sem tabelas complexas
+- A Proposta IA é **opcional**: botão "Gerar Proposta IA" aparece APÓS a Cotação estar salva
+- Motor IA **NUNCA** gere preços — recebe o total como input numérico simples
+- O "Resumo de Investimento" vem do total da Cotação, não do LLM
+
+#### Decisões Estratégicas (SWOT consolidado)
+
+| Ref | Decisão | Justificação |
+|---|---|---|
+| **W3** | Cotação preenche automaticamente o prompt IA | O Motor IA recebe os dados da Cotação (items, valores, cliente) como contexto. O utilizador NAO preenche novamente dados que ja existem na Cotação. |
+| **W5** | Secções vazias = responsabilidade do autor | Se o utilizador nao preenche um campo dinamico, a secção correspondente NAO aparece na proposta (ou mostra "A definir"). NAO se forca o preenchimento — mantem-se a dinamica e nao se cansa quem quer simplicidade. |
+| **O2** | Sector detectado automaticamente, editavel | A IA identifica o sector a partir do contexto da Cotação (items, nome do cliente, descricao). O utilizador pode alterar. Sectors sugeridos: Bank, Telecom, Government, Retail, NGO, Outro. |
+| **O5** | Termo "Rascunho" em vez de "Draft" | Todo o sistema usa a expressao moçambicana "rascunho" (ja usada no enum `proposal_status`). O output da IA é tratado como "rascunho editavel" ate o utilizador aprovar. |
+| **T1** | Dois modos: Rapido vs Assertivo | **Rapido** (padrao): 4-5 campos obrigatorios, IA preenche o resto com base nos dados da Cotação. **Assertivo**: todos os campos dinamicos disponiveis, utilizador controla cada secção. A escolha e do utilizador. |
+| **T3** | Sem solucao para tom x campos | Combinacoes tom × campos sao exponenciais. Aberto — a resolver apos primeiros testes com utilizadores reais. |
+| **T4** | Sem solucao para expectativas IA | Utilizadores esperam que a IA infira dados nao fornecidos. Aberto — mitigar com placeholders descritivos e exemplos nos campos. |
+
+#### Tarefas
+- [ ] Tabela `proposta_ai` (Supabase migration)
 - [ ] API route `/api/generate-proposal` (server-side LLM call)
-- [ ] System prompt baseado na especificação fornecida (anti-alucinação, estrutura obrigatória)
-- [ ] Preview editável das secções geradas
-- [ ] Templates narrativos com `drawNarrativeSections()`
-- [ ] Cache de output em `proposta_ai_output`
+- [ ] Formulário dinâmico com dois modos (Rápido / Assertivo)
+- [ ] Campos dinâmicos com placeholders descritivos e exemplos moçambicanos
+- [ ] Detecção automática de sector a partir da Cotação (editável)
+- [ ] Auto-população dos campos a partir dos dados da Cotação (sem duplicação)
+- [ ] Selecção de tom: Formal Corporativo, Persuasivo Comercial, Técnico Directo, Consultivo
+- [ ] System prompt anti-alucinação (estrutura de 8 secções obrigatória)
+- [ ] Preview editável das secções geradas (rascunho)
+- [ ] PDF narrativo para Doc A (Proposta Comercial/Técnica)
+- [ ] Resumo de Investimento no Doc A (total da Cotação, sem tabela detalhada)
+- [ ] Exportar Doc A + Doc B simultaneamente
+- [ ] Sufixo `-FIN` no header da Cotação quando anexada à Proposta
 
 ### Fase 4 — Monetização
 - [ ] Sistema de planos (Free: 5 propostas/mês; PRO: ilimitado, 250 MTn/mês)
@@ -252,3 +286,10 @@ Cada tema controla:
 - [ ] Página dedicada de facturas
 - [ ] Domínio próprio (propostaja.co.mz)
 - [ ] Remover `as any` residuais em Propostas.tsx, faturaService.ts, profileService.ts, propostaService.ts
+- [ ] (O3) Metricas de uso por campo — trackear quais campos os utilizadores preenchem mais para optimizar o formulário dinâmico apos 50+ propostas geradas
+- [ ] (O4) Upselling via "Campos PRO" — campos avançados (ROI, Benchmark, Estudo de Caso) bloqueados no plano gratuito com tooltip
+- [ ] (T2) Sistema de advertências aos clientes sobre mudanças futuras nos modelos de LLM (output pode variar entre versões)
+- [ ] (T5) Controlo de custo de tokens a longo prazo — monitorizar uso e preco por modelo
+- [ ] Fase 2 — UI de Templates: Modal de seleção visual, thumbnails, indicador PRO
+- [ ] 20% ajustes nos templates PDF existentes (testados e aprovados a 80%)
+- [ ] Templates de sector (Bank, Telecom, Government, etc.) com campos pré-preenchidos por contexto
