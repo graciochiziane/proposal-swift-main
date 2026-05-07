@@ -254,19 +254,26 @@ O sistema gera dois PDFs distintos com a mesma referência (ex: PROP-202605-0001
 | **T4** | Sem solucao para expectativas IA | Utilizadores esperam que a IA infira dados nao fornecidos. Aberto — mitigar com placeholders descritivos e exemplos nos campos. |
 
 #### Tarefas
-- [ ] Tabela `proposta_ai` (Supabase migration)
-- [ ] API route `/api/generate-proposal` (server-side LLM call)
-- [ ] Formulário dinâmico com dois modos (Rápido / Assertivo)
-- [ ] Campos dinâmicos com placeholders descritivos e exemplos moçambicanos
-- [ ] Detecção automática de sector a partir da Cotação (editável)
-- [ ] Auto-população dos campos a partir dos dados da Cotação (sem duplicação)
-- [ ] Selecção de tom: Formal Corporativo, Persuasivo Comercial, Técnico Directo, Consultivo
-- [ ] System prompt anti-alucinação (estrutura de 8 secções obrigatória)
-- [ ] Preview editável das secções geradas (rascunho)
+- [x] Tabela `proposta_ai` (Supabase migration)
+- [x] Edge Function `generate-proposal` (server-side LLM call via Supabase)
+- [x] Formulário dinâmico com dois modos (Rápido / Assertivo)
+- [x] Campos dinâmicos com placeholders descritivos e exemplos moçambicanos
+- [x] Detecção automática de sector a partir da Cotação (editável)
+- [x] Auto-população dos campos a partir dos dados da Cotação (sem duplicação)
+- [x] Selecção de tom: Formal Corporativo, Persuasivo Comercial, Técnico Directo, Consultivo
+- [x] System prompt anti-alucinação (estrutura de 8 secções obrigatória)
+- [x] Preview editável das secções geradas (rascunho)
+- [x] Service `propostaAiService.ts` (CRUD + generate + detectSector)
+- [x] Página `GerarPropostaIA.tsx` (3-step flow completo)
+- [x] Rota `/proposta/:id/gerar-ia` + botão "Proposta IA" no ResumoProposta
 - [ ] PDF narrativo para Doc A (Proposta Comercial/Técnica)
 - [ ] Resumo de Investimento no Doc A (total da Cotação, sem tabela detalhada)
 - [ ] Exportar Doc A + Doc B simultaneamente
 - [ ] Sufixo `-FIN` no header da Cotação quando anexada à Proposta
+
+#### Pendente para funcionar
+1. Executar `supabase/migrations/proposta_ai.sql` no SQL Editor do Supabase
+2. Configurar `OPENAI_API_KEY` como secret do Supabase Edge Function
 
 ### Fase 4 — Monetização
 - [ ] Sistema de planos (Free: 5 propostas/mês; PRO: ilimitado, 250 MTn/mês)
