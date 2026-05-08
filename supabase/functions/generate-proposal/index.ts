@@ -1,7 +1,7 @@
 // ============================================================
 // Supabase Edge Function: generate-proposal
 // Recebe dados da cotacao + campos do formulario
-// Chama OpenAI API para gerar narrativa estruturada
+// Chama Google Gemini API para gerar narrativa estruturada
 // ============================================================
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -202,55 +202,53 @@ ${sectionDescriptions || "(Nenhum campo adicional preenchido — gere tudo com b
 
 Gere a proposta seguindo as seccoes especificadas.`;
 
-    // 5. Chamar OpenAI API
-    const openaiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!openaiKey) {
-      return new Response(JSON.stringify({ error: "OPENAI_API_KEY nao configurada no Supabase" }), {
+    // 5. Chamar Google Gemini API
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiKey) {
+      return new Response(JSON.stringify({ error: "GEMINI_API_KEY nao configurada no Supabase" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const model = body.model || "gpt-4o-mini";
+    const model = body.model || "gemini-2.0-flash";
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const geminiResponse = await fetch(geminiUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${openaiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 4000,
-        response_format: { type: "json_object" },
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 8000,
+          responseMimeType: "application/json",
+        },
       }),
     });
 
-    if (!openaiResponse.ok) {
-      const errBody = await openaiResponse.text();
-      console.error("OpenAI API error:", errBody);
-      return new Response(JSON.stringify({ error: `Erro na API OpenAI: ${openaiResponse.status}` }), {
+    if (!geminiResponse.ok) {
+      const errBody = await geminiResponse.text();
+      console.error("Gemini API error:", errBody);
+      return new Response(JSON.stringify({ error: `Erro na API Gemini: ${geminiResponse.status}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const openaiData = await openaiResponse.json();
-    const usage = openaiData.usage || {};
+    const geminiData = await geminiResponse.json();
+    const usageMeta = geminiData.usageMetadata || {};
+    const totalTokens = usageMeta.totalTokenCount || 0;
 
     // Parsear resposta
     let parsedSections: Record<string, string> = {};
     try {
-      const content = openaiData.choices?.[0]?.message?.content || "{}";
+      const content = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
       const cleaned = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       parsedSections = JSON.parse(cleaned).seccoes || JSON.parse(cleaned);
     } catch (parseErr) {
-      console.error("Failed to parse OpenAI response:", parseErr);
+      console.error("Failed to parse Gemini response:", parseErr);
       return new Response(JSON.stringify({ error: "Erro ao processar resposta da IA" }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -275,8 +273,8 @@ Gere a proposta seguindo as seccoes especificadas.`;
         input_json: fields,
         output_json: parsedSections,
         modelo: model,
-        tokens_usados: usage.total_tokens || 0,
-        custo_usd: ((usage.total_tokens || 0) / 1_000_000) * (model === "gpt-4o" ? 2.5 : 0.15),
+        tokens_usados: totalTokens,
+        custo_usd: 0, // Gemini 2.0 Flash is free within usage limits
         gerado_em: new Date().toISOString(),
       })
       .select("id, referencia, created_at")
@@ -294,7 +292,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
         referencia: proposta.numero,
         seccoes: parsedSections,
         modelo: model,
-        tokens_usados: usage.total_tokens || 0,
+        tokens_usados: totalTokens,
         gerado_em: new Date().toISOString(),
       }),
       {

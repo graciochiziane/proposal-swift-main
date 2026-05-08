@@ -109,7 +109,7 @@ export const propostaAiService = {
     tone: TomNarrativa,
     mode: GeracaoMode,
     sector: string,
-    model: string = 'gpt-4o-mini',
+    model: string = 'gemini-2.0-flash',
   ): Promise<GenerateResult> {
     const { data, error } = await supabase.functions.invoke('generate-proposal', {
       body: { cotacaoId, fields, tone, mode, sector, model },
