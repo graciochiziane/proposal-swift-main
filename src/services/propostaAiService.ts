@@ -116,8 +116,13 @@ export const propostaAiService = {
     });
 
     if (error) {
-      console.error('Edge function error:', error);
-      throw new Error(error.message || 'Erro ao gerar proposta');
+      console.error('Edge function error [status]:', error.message);
+      // Tenta extrair mensagem detalhada do erro
+      const detail = (error as any).context?.status || '';
+      const msg = detail
+        ? `Erro ${detail}: ${error.message}`
+        : error.message || 'Erro ao gerar proposta';
+      throw new Error(msg);
     }
 
     if (data?.error) {

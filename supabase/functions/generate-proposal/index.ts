@@ -64,19 +64,30 @@ Deno.serve(async (req) => {
     // 1. Autenticacao
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Token de autenticacao nao fornecido' }), {
+      return new Response(JSON.stringify({ error: 'Token de autenticacao nao fornecido', code: 'NO_AUTH_HEADER' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing env vars:', { hasUrl: !!supabaseUrl, hasServiceKey: !!supabaseServiceKey })
+      return new Response(JSON.stringify({ error: 'Configuracao do servidor incompleta', code: 'MISSING_ENV' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) {
-      return new Response(JSON.stringify({ error: 'Utilizador nao autenticado' }), {
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      console.error('Auth failed:', { authError: authError?.message, tokenPrefix: token.substring(0, 10) + '...' })
+      return new Response(JSON.stringify({ error: 'Utilizador nao autenticado', code: 'AUTH_FAILED', detail: authError?.message }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
