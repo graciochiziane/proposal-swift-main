@@ -12,7 +12,7 @@ export async function renderExecutive(
   dono?: DonoProposta,
   narrative?: NarrativeSection[],
 ) {
-  const ctx = createContext(proposta, cliente, dono, executiveTheme);
+  const ctx = createContext(proposta, cliente, dono, executiveTheme, narrative);
   const { doc, margin, pageWidth, contentWidth, primary } = ctx;
   let y = 0;
 

@@ -266,7 +266,7 @@ O sistema gera dois PDFs distintos com a mesma referência (ex: PROP-202605-0001
 - [x] Service `propostaAiService.ts` (CRUD + generate + detectSector)
 - [x] Página `GerarPropostaIA.tsx` (3-step flow completo)
 - [x] Rota `/proposta/:id/gerar-ia` + botão "Proposta IA" no ResumoProposta
-- [ ] PDF narrativo para Doc A (Proposta Comercial/Técnica)
+- [x] PDF narrativo para Doc A (Proposta Comercial/Técnica) — `gerarPDFNarrativa()` standalone
 - [ ] Resumo de Investimento no Doc A (total da Cotação, sem tabela detalhada)
 - [ ] Exportar Doc A + Doc B simultaneamente
 - [ ] Sufixo `-FIN` no header da Cotação quando anexada à Proposta

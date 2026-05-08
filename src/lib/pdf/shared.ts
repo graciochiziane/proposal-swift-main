@@ -72,6 +72,7 @@ export function createContext(
   cliente?: Cliente,
   dono?: DonoProposta,
   theme?: PdfTheme,
+  narrative?: NarrativeSection[],
 ): PDFContext {
   const doc = new jsPDF();
   const d = dono ?? defaultDono;
@@ -88,6 +89,7 @@ export function createContext(
     margin,
     contentWidth: pageWidth - margin * 2,
     theme: theme ?? defaultTheme,
+    narrative,
   };
 }
 
@@ -133,8 +135,8 @@ export async function drawItemsTable(ctx: PDFContext, startY: number): Promise<n
     body: tableBody,
     theme: tableTheme.theme ?? 'plain',
     headStyles: {
-      fillColor: (tableTheme.headerBg ?? lighten(primary, 0.85)) as any,
-      textColor: (tableTheme.headerColor ?? primary) as any,
+      fillColor: (tableTheme.headerBg ?? lighten(primary, 0.85)) as [number, number, number],
+      textColor: (tableTheme.headerColor ?? primary) as [number, number, number],
       fontStyle: 'bold',
       fontSize: tableTheme.headerFontSize ?? 8,
       cellPadding: tableTheme.cellPadding ?? 5,
@@ -151,10 +153,11 @@ export async function drawItemsTable(ctx: PDFContext, startY: number): Promise<n
       3: { halign: 'right', cellWidth: contentWidth * columnRatios[3] },
     },
     alternateRowStyles: {
-      fillColor: (tableTheme.altRowBg ?? [248, 250, 252]) as any,
+      fillColor: (tableTheme.altRowBg ?? [248, 250, 252]) as [number, number, number],
     },
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (doc as any).lastAutoTable.finalY;
 }
 

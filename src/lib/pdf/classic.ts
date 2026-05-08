@@ -12,7 +12,7 @@ export async function renderClassic(
   dono?: DonoProposta,
   narrative?: NarrativeSection[],
 ) {
-  const ctx = createContext(proposta, cliente, dono, classicTheme);
+  const ctx = createContext(proposta, cliente, dono, classicTheme, narrative);
   const { doc, margin, pageWidth, contentWidth, primary } = ctx;
   let y = margin;
 

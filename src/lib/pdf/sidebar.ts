@@ -18,7 +18,7 @@ export async function renderSidebar(
   dono?: DonoProposta,
   narrative?: NarrativeSection[],
 ) {
-  const ctx = createContext(proposta, cliente, dono, sidebarTheme);
+  const ctx = createContext(proposta, cliente, dono, sidebarTheme, narrative);
   const { doc, margin, pageWidth, primary } = ctx;
   let y = 0;
 

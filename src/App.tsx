@@ -15,7 +15,6 @@ import ResumoProposta from "@/pages/ResumoProposta";
 import GerarPropostaIA from "@/pages/GerarPropostaIA";
 import Configuracoes from "@/pages/Configuracoes";
 import Admin from "@/pages/Admin";
-import GerarPropostaIA from "@/pages/GerarPropostaIA";
 import Auth from "@/pages/Auth";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";

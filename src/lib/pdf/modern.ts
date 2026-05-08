@@ -12,7 +12,7 @@ export async function renderModern(
   dono?: DonoProposta,
   narrative?: NarrativeSection[],
 ) {
-  const ctx = createContext(proposta, cliente, dono, modernTheme);
+  const ctx = createContext(proposta, cliente, dono, modernTheme, narrative);
   const { doc, margin, pageWidth, primary } = ctx;
   let y = 0;
 

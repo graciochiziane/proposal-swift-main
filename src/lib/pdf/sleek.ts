@@ -18,7 +18,7 @@ export async function renderSleek(
   dono?: DonoProposta,
   narrative?: NarrativeSection[],
 ) {
-  const ctx = createContext(proposta, cliente, dono, sleekTheme);
+  const ctx = createContext(proposta, cliente, dono, sleekTheme, narrative);
   const { doc, margin, pageWidth, contentWidth, primary } = ctx;
   let y = 0;
 

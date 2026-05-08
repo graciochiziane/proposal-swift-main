@@ -220,7 +220,11 @@ export default function GerarPropostaIA() {
     try {
       await gerarPDFNarrativa(proposta, dono, seccoes);
       if (propostaAiId) {
-        await propostaAiService.markExported(propostaAiId);
+        try {
+          await propostaAiService.markExported(propostaAiId);
+        } catch {
+          console.warn('Falha ao marcar proposta como exportada (PDF gerado com sucesso)');
+        }
       }
       toast.success('Proposta comercial exportada (PDF)');
     } catch (err) {

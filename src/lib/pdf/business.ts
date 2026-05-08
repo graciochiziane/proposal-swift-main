@@ -17,7 +17,7 @@ export async function renderBusiness(
   dono?: DonoProposta,
   narrative?: NarrativeSection[],
 ) {
-  const ctx = createContext(proposta, cliente, dono, businessTheme);
+  const ctx = createContext(proposta, cliente, dono, businessTheme, narrative);
   const { doc, margin, pageWidth, contentWidth } = ctx;
   let y = margin;
 

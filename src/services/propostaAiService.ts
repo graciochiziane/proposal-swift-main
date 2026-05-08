@@ -152,13 +152,17 @@ export const propostaAiService = {
   },
 
   /**
-   * Buscar proposta AI por ID
+   * Buscar proposta AI por ID (verifica ownership)
    */
   async getById(id: string): Promise<PropostaAiRecord | null> {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) return null;
+
     const { data, error } = await supabase
       .from('proposta_ai')
       .select('*')
       .eq('id', id)
+      .eq('user_id', userData.user.id)
       .maybeSingle();
 
     if (error) {
@@ -185,7 +189,7 @@ export const propostaAiService = {
   },
 
   /**
-   * Marcar como exportado
+   * Marcar como exportado (lanca erro se falhar)
    */
   async markExported(id: string): Promise<void> {
     const { error } = await supabase
@@ -195,11 +199,12 @@ export const propostaAiService = {
 
     if (error) {
       console.error('Erro ao marcar exportado:', error);
+      throw new Error('Erro ao marcar proposta como exportada');
     }
   },
 
   /**
-   * Regenerar uma proposta existente (mesmo ID, novo output)
+   * Regenerar uma proposta existente (cria novo registo com novo ID)
    */
   async regenerate(
     cotacaoId: string,
@@ -209,7 +214,6 @@ export const propostaAiService = {
     sector: string,
     model: string = 'gpt-4o-mini',
   ): Promise<GenerateResult> {
-    // Gera uma nova e apaga a antiga (a nova tera novo ID)
     return this.generate(cotacaoId, fields, tone, mode, sector, model);
   },
 
@@ -229,7 +233,7 @@ export const propostaAiService = {
       'Retalho / Comercio': ['retalho', 'loja', 'pos', 'stock', 'inventario', 'ecommerce', 'venda', 'cliente'],
       'Seguros': ['seguro', 'apolice', 'sinistro', 'prémio', 'cobertura', 'resseguro'],
       'Transportes / Logistica': ['transporte', 'logistica', 'frota', 'rastreamento', 'gps', 'carga', 'portuario', 'alfandega'],
-      'Imobiliaria / Construcao': ['imobiliari', 'construcao', 'obra', 'projecto', 'arquitect', 'solar', 'predial'],
+      'Imobiliaria / Construcao': ['imobiliari', 'construcao', 'obra', 'projecto', 'arquitect', 'predial'],
     };
 
     let bestMatch = 'Outro';
