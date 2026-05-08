@@ -214,30 +214,53 @@ Gere a proposta seguindo as seccoes especificadas.`;
     const model = body.model || "gemini-2.0-flash";
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
 
-    const geminiResponse = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 8000,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
+    console.log("Calling Gemini API:", { model, url: geminiUrl.replace(geminiKey, "***") });
+
+    let geminiResponse: Response;
+    try {
+      geminiResponse = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            { role: "user", parts: [{ text: systemPrompt + "\n\n" + userPrompt }] }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 8000,
+          },
+        }),
+      });
+    } catch (fetchErr) {
+      console.error("Gemini fetch failed:", fetchErr);
+      return new Response(JSON.stringify({ error: "Falha ao conectar com a API Gemini" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!geminiResponse.ok) {
       const errBody = await geminiResponse.text();
-      console.error("Gemini API error:", errBody);
+      console.error("Gemini API error:", geminiResponse.status, errBody);
       return new Response(JSON.stringify({ error: `Erro na API Gemini: ${geminiResponse.status}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const geminiData = await geminiResponse.json();
+    let geminiData: any;
+    try {
+      geminiData = await geminiResponse.json();
+    } catch (jsonErr) {
+      console.error("Gemini JSON parse failed:", jsonErr);
+      return new Response(JSON.stringify({ error: "Resposta invalida da API Gemini" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    console.log("Gemini response received:", { candidates: geminiData.candidates?.length });
+
     const usageMeta = geminiData.usageMetadata || {};
     const totalTokens = usageMeta.totalTokenCount || 0;
 
@@ -245,6 +268,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
     let parsedSections: Record<string, string> = {};
     try {
       const content = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      console.log("Gemini content length:", content.length);
       const cleaned = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       parsedSections = JSON.parse(cleaned).seccoes || JSON.parse(cleaned);
     } catch (parseErr) {
@@ -301,8 +325,9 @@ Gere a proposta seguindo as seccoes especificadas.`;
       },
     );
   } catch (err) {
-    console.error("Edge function error:", err);
-    return new Response(JSON.stringify({ error: "Erro interno do servidor" }), {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("Edge function error:", errMsg, err);
+    return new Response(JSON.stringify({ error: "Erro interno do servidor", detail: errMsg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
