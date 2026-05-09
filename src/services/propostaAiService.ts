@@ -109,7 +109,7 @@ export const propostaAiService = {
     tone: TomNarrativa,
     mode: GeracaoMode,
     sector: string,
-    model: string = 'gemini-2.0-flash',
+    model: string = 'gemini-2.5-flash-preview-05-20',
   ): Promise<GenerateResult> {
     const { data, error } = await supabase.functions.invoke('generate-proposal', {
       body: { cotacaoId, fields, tone, mode, sector, model },
@@ -217,7 +217,7 @@ export const propostaAiService = {
     tone: TomNarrativa,
     mode: GeracaoMode,
     sector: string,
-    model: string = 'gemini-2.0-flash',
+    model: string = 'gemini-2.5-flash-preview-05-20',
   ): Promise<GenerateResult> {
     return this.generate(cotacaoId, fields, tone, mode, sector, model);
   },

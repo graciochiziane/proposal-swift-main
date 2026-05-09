@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
     }
 
     const { cotacaoId, fields, tone = "formal", mode = "rapido", sector, model: bodyModel } = body;
-    const model = bodyModel || "gemini-2.0-flash";
+    const model = bodyModel || "gemini-2.5-flash-preview-05-20";
 
     if (!cotacaoId || !fields) {
       console.error("[STEP-FAIL] PARSE: cotacaoId ou fields em falta", { cotacaoId, hasFields: !!fields });
