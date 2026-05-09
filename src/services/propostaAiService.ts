@@ -217,7 +217,7 @@ export const propostaAiService = {
     tone: TomNarrativa,
     mode: GeracaoMode,
     sector: string,
-    model: string = 'gpt-4o-mini',
+    model: string = 'gemini-2.0-flash',
   ): Promise<GenerateResult> {
     return this.generate(cotacaoId, fields, tone, mode, sector, model);
   },
