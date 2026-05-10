@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { usePostHog } from '@posthog/react';
 
 interface AuthContextValue {
   user: User | null;
@@ -20,12 +21,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const posthog = usePostHog();
 
   useEffect(() => {
     // Set up listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess);
       setUser(sess?.user ?? null);
+
+      // ---- PostHog: identificar/resetar utilizador ----
+      if (posthog) {
+        if (event === 'SIGNED_IN' && sess?.user) {
+          posthog.identify(sess.user.id, {
+            email: sess.user.email || undefined,
+            created_at: sess.user.created_at,
+          });
+          posthog.startSessionRecording?.();
+        } else if (event === 'SIGNED_OUT') {
+          posthog.reset();
+        }
+      }
 
       // Redireccionar para login quando a sessão expira ou é invalidada
       if (event === 'SIGNED_OUT' && window.location.pathname !== '/auth') {
@@ -41,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [posthog]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
