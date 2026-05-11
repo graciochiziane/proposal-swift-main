@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { posthog } from 'posthog-js';
 
 interface AuthContextValue {
   user: User | null;
@@ -27,7 +28,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(sess);
       setUser(sess?.user ?? null);
 
-      // Redireccionar para login quando a sessão expira ou é invalidada
+      // PostHog: identify on login
+      if (event === 'SIGNED_IN' && sess?.user) {
+        posthog.identify(sess.user.id, {
+          email: sess.user.email,
+        });
+      }
+
+      // PostHog: reset on logout
+      if (event === 'SIGNED_OUT') {
+        posthog.reset();
+      }
+
+      // Redirecionar para login quando a sessao expira ou é invalidada
       if (event === 'SIGNED_OUT' && window.location.pathname !== '/auth') {
         window.location.href = '/auth';
       }
