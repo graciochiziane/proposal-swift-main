@@ -181,8 +181,8 @@ export default function CriarProposta() {
     }
   };
 
-  const inputClass = "w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-shadow";
-  const labelClass = "text-sm text-muted-foreground mb-1 block";
+  const inputClass = "w-full px-3 md:px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-shadow";
+  const labelClass = "text-xs text-muted-foreground mb-1 block";
 
   if (loading) {
     return (
@@ -199,7 +199,7 @@ export default function CriarProposta() {
         {existente ? 'Editar Proposta' : 'Nova Proposta'}
       </h1>
 
-      <div className="bg-card rounded-xl p-6 border border-border card-float space-y-5 animate-fade-up">
+      <div className="bg-card rounded-xl p-4 md:p-6 border border-border card-float space-y-5 animate-fade-up">
         <div>
           <label className={labelClass}>Cliente *</label>
           <div className="flex gap-2">
@@ -277,45 +277,49 @@ export default function CriarProposta() {
         <div className="space-y-3">
           <label className="text-sm font-medium">Itens *</label>
           {itens.map((item, idx) => (
-            <div key={item.id} className="relative">
-              <div className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-12 sm:col-span-5 relative" ref={idx === activeItemIndex ? catalogoRef : undefined}>
-                  <input
-                    className={inputClass}
-                    placeholder="Nome do item"
-                    value={item.nome}
-                    onChange={e => {
-                      updateItem(item.id, 'nome', e.target.value);
-                      setCatalogoFilter(e.target.value);
-                      setCatalogoOpen(e.target.value.length > 0);
+            <div key={item.id} className="relative space-y-2">
+              {/* Row 1: Nome - full width */}
+              <div className="relative" ref={idx === activeItemIndex ? catalogoRef : undefined}>
+                <input
+                  className={inputClass}
+                  placeholder="Nome do item"
+                  value={item.nome}
+                  onChange={e => {
+                    updateItem(item.id, 'nome', e.target.value);
+                    setCatalogoFilter(e.target.value);
+                    setCatalogoOpen(e.target.value.length > 0);
+                    setActiveItemIndex(idx);
+                  }}
+                  onFocus={() => {
+                    if (item.nome.length > 0) {
+                      setCatalogoFilter(item.nome);
+                      setCatalogoOpen(true);
                       setActiveItemIndex(idx);
-                    }}
-                    onFocus={() => {
-                      if (item.nome.length > 0) {
-                        setCatalogoFilter(item.nome);
-                        setCatalogoOpen(true);
-                        setActiveItemIndex(idx);
-                      }
-                    }}
-                    onBlur={() => setTimeout(() => setCatalogoOpen(false), 200)}
-                  />
-                  {catalogoOpen && catalogoFiltrado.length > 0 && idx === activeItemIndex && (
-                    <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                      {catalogoFiltrado.slice(0, 8).map(catItem => (
-                        <button
-                          key={catItem.id}
-                          type="button"
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-secondary transition-colors flex justify-between items-center"
-                          onMouseDown={() => selectFromCatalogo(catItem, item.id)}
-                        >
-                          <span className="truncate">{catItem.nome}</span>
-                          <span className="text-muted-foreground text-xs ml-2 whitespace-nowrap">{formatMZN(catItem.precoUnitario)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="col-span-3 sm:col-span-2">
+                    }
+                  }}
+                  onBlur={() => setTimeout(() => setCatalogoOpen(false), 200)}
+                />
+                {catalogoOpen && catalogoFiltrado.length > 0 && idx === activeItemIndex && (
+                  <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {catalogoFiltrado.slice(0, 8).map(catItem => (
+                      <button
+                        key={catItem.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-secondary transition-colors flex justify-between items-center"
+                        onMouseDown={() => selectFromCatalogo(catItem, item.id)}
+                      >
+                        <span className="truncate">{catItem.nome}</span>
+                        <span className="text-muted-foreground text-xs ml-2 whitespace-nowrap">{formatMZN(catItem.precoUnitario)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Row 2: Qtd (20%) | Preço (35%) | Subtotal (35%) | Actions (10%) - desktop grid */}
+              <div className="grid grid-cols-12 gap-2 md:gap-2 items-end">
+                <div className="col-span-3">
+                  <label className="text-xs text-muted-foreground mb-1 block md:hidden">Qtd</label>
                   <input
                     type="number"
                     className={inputClass + ' text-center'}
@@ -326,7 +330,8 @@ export default function CriarProposta() {
                     placeholder="Qtd"
                   />
                 </div>
-                <div className="col-span-4 sm:col-span-2">
+                <div className="col-span-4">
+                  <label className="text-xs text-muted-foreground mb-1 block md:hidden">Preço</label>
                   <input
                     type="number"
                     className={inputClass + ' text-right'}
@@ -337,8 +342,9 @@ export default function CriarProposta() {
                     placeholder="Preço"
                   />
                 </div>
-                <div className="col-span-3 sm:col-span-2 flex items-center justify-end">
-                  <span className="text-sm font-medium text-primary whitespace-nowrap">
+                <div className="col-span-3 flex items-center justify-end">
+                  <label className="text-xs text-muted-foreground mb-1 block md:hidden w-full text-right">Subtotal</label>
+                  <span className="text-sm font-medium text-primary whitespace-nowrap truncate">
                     {formatMZN(item.subtotal)}
                   </span>
                 </div>
@@ -347,20 +353,20 @@ export default function CriarProposta() {
                     <button
                       type="button"
                       onClick={() => handleAddToCatalog(item)}
-                      className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                      className="p-2 md:p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
                       title="Salvar no catálogo"
                     >
-                      <Bookmark className="h-3.5 w-3.5" />
+                      <Bookmark className="h-4 w-4 md:h-3.5 md:w-3.5" />
                     </button>
                   )}
                   {itens.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeItem(item.id)}
-                      className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                      className="p-2 md:p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                       title="Remover item"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
                     </button>
                   )}
                 </div>
@@ -416,7 +422,7 @@ export default function CriarProposta() {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl p-6 border border-border card-float space-y-3 animate-fade-up">
+      <div className="bg-card rounded-xl p-4 md:p-6 border border-border card-float space-y-3 animate-fade-up">
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Subtotal</span>
           <span>{formatMZN(subtotal)}</span>
