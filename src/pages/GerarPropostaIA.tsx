@@ -124,7 +124,7 @@ export default function GerarPropostaIA() {
     try {
       const filteredFields: PropostaAiFields = {};
       for (const [key, value] of Object.entries(fields)) {
-        if (includedSections[key] && value?.trim()) {
+        if (includedSections[key] !== false && value?.trim()) {
           filteredFields[key] = value;
         }
       }
@@ -156,7 +156,7 @@ export default function GerarPropostaIA() {
     try {
       const filteredFields: PropostaAiFields = {};
       for (const [key, value] of Object.entries(fields)) {
-        if (includedSections[key] && value?.trim()) {
+        if (includedSections[key] !== false && value?.trim()) {
           filteredFields[key] = value;
         }
       }
