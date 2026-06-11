@@ -305,7 +305,7 @@ export default function Propostas() {
                 <div
                   key={p.id}
                   onClick={() => navigate(`/proposta/${p.id}`)}
-                  className="bg-card rounded-xl p-4 md:p-5 border border-border card-float hover:border-primary/30 transition-colors animate-fade-up cursor-pointer group"
+                  className={`bg-card rounded-xl p-4 md:p-5 border border-border card-float hover:border-primary/30 transition-colors animate-fade-up cursor-pointer group ${acaoDropdown === p.id ? 'relative z-50' : ''}`}
                   style={{ animationDelay: `${200 + i * 40}ms` }}
                 >
                   <div className="flex items-center justify-between gap-4">
