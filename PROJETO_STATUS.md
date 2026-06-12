@@ -140,7 +140,8 @@
 - Secret: configurar `GEMINI_API_KEY` (NAO `OPENAI_API_KEY`)
 - Diagnostic logging: 10 steps com [STEP-OK]/[STEP-FAIL] prefix
 - Timeout: 60s limite do Supabase Edge Functions
-- System prompt anti-alucinação: estrutura de 8 secções obrigatória
+- System prompt anti-alucinação: estrutura de 8-10 secções obrigatória
+- Cronograma (modo assertivo): prompt instrui a IA a gerar texto + tabela pipe com marcadores `TABELA_CRONOGRAMA_INICIO`/`FIM` (4 colunas: Fase, Periodo, Actividades, Entregaveis)
 
 ---
 
@@ -163,6 +164,8 @@
 - **Propostas.tsx**: Corrigido double call de `getPropostas()` (era chamado 2× em `Promise.all`)
 - **useAuth.tsx**: Adicionado redirecionamento para `/auth` quando sessão expira (`SIGNED_OUT` event)
 - **tsconfig.app.json**: Removido `vitest/globals` (pertence a config de testes, não da app)
+- **GerarPropostaIA.tsx (Jun 2026)**: Campos avançados (cronograma, impacto, escopo, condicoes) com switch ligado tinham seu conteudo removido antes do envio à API. Causa: `includedSections[key]` (truthy check) vs `includedSections[key] !== false` na UI. Corrigido nas funcoes `handleGenerate` e `handleRegenerate`.
+- **Propostas.tsx (Jun 2026)**: Dropdown de accoes (tres pontinhos) ficava atras dos cards siblings. Causa: `z-50` do dropdown preso ao stacking context do card pai; cards irmãos posteriores pintavam por cima. Corrigido: adicionar `relative z-50` ao card quando o seu dropdown esta aberto.
 
 ### Testes unitários
 - **calculos.test.ts**: 5 testes criados com Vitest (subtotal, desconto percentual, desconto fixo, total com IVA, edge cases)
@@ -277,6 +280,7 @@ Cada tema controla:
 - Header com faixa de acento, bloco direito com número e data
 - Seccções numeradas com badges e underline decorativo
 - Suporta bullets (dot, check, arrow, dash)
+- **Cronograma com tabela estilizada (Jun 2026)**: quando a secção `cronograma` contem marcadores `TABELA_CRONOGRAMA_INICIO`/`FIM`, o parser extrai texto explicativo + tabela pipe e renderiza com `jspdf-autotable` (colunas: Fase, Periodo, Actividades, Entregaveis). Fallback para texto normal se marcadores nao forem encontrados.
 - Page breaks automáticos
 - Footer com branding em todas as páginas
 - Nota de encerramento: "Para detalhamento financeiro completo, consultar o documento Cotacao Financeira (Doc B)"
@@ -370,6 +374,7 @@ O sistema gera dois PDFs distintos com a mesma referência (ex: PROP-202605-0001
 - [x] Rota `/proposta/:id/gerar-ia` + botão "Proposta IA" no ResumoProposta
 - [x] PDF narrativo para Doc A (Proposta Comercial/Técnica) — `gerarPDFNarrativa()` standalone
 - [x] Doc A + Doc B exportáveis separadamente
+- [x] Cronograma com tabela estilizada no PDF narrativo (texto + tabela autoTable)
 - [ ] Resumo de Investimento automático no Doc A (total da Cotação injectado como secção)
 - [ ] Exportar Doc A + Doc B simultaneamente (zip ou PDF combinado)
 - [ ] Sufixo `-FIN` no header da Cotação quando anexada à Proposta IA
