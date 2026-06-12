@@ -209,6 +209,18 @@ REGRAS CRITICAS (ANTI-ALUCINACAO):
 7. Cada seccao deve ter 2-4 paragrafos substanciais (minimo 100 palavras por seccao).
 8. Use paragrafos bem estruturados, com topicos claros e progressao logica.
 ${missingSections.length > 0 ? `9. As seguintes seccoes NAO foram preenchidas pelo utilizador - gere conteudo contextual com base nos dados da cotacao e info do cliente, mas seja generico: ${missingSections.join(", ")}` : ""}
+${sections.includes("cronograma") ? `10. A seccao "cronograma" DEVE seguir este formato obrigatorio:
+- Primeiro, escreva 1-2 paragrafos de texto explicativo sobre a abordagem temporal do projecto.
+- Depois, inclua EXACTAMENTE esta marcacao seguida de uma tabela em formato pipe:
+TABELA_CRONOGRAMA_INICIO
+| Fase | Periodo | Actividades | Entregaveis |
+|---|---|---|---|
+| Fase 1: Nome da Fase | Ex: Sem 1-4 ou Mes 1-2 | Descricao das actividades | Lista dos entregaveis |
+| Fase 2: Nome da Fase | Ex: Sem 5-12 | ... | ... |
+TABELA_CRONOGRAMA_FIM
+- A tabela DEVE ter exactamente 4 colunas: Fase, Periodo, Actividades, Entregaveis.
+- Inclua pelo menos 2-5 fases realistas baseadas no contexto do projecto.
+- NAO inclua nada apos TABELA_CRONOGRAMA_FIM nessa seccao.` : ""}
 
 OUTPUT FORMATO:
 Responda APENAS com JSON valido (sem markdown, sem code fences) no seguinte formato:

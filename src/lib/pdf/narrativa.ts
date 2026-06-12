@@ -10,6 +10,56 @@ import type { Proposta, DonoProposta, PDFTemplate } from '@/types';
 import type { NarrativeSection, PdfTheme } from './types';
 import { hexToRgb, lighten, darken } from './shared';
 
+// ---- Cronograma table parser ----
+
+const CRONO_TABLE_START = 'TABELA_CRONOGRAMA_INICIO';
+const CRONO_TABLE_END = 'TABELA_CRONOGRAMA_FIM';
+
+interface CronogramaParsed {
+  textBefore: string;   // explanatory text
+  headers: string[];    // column headers
+  rows: string[][];     // table data rows
+}
+
+function parseCronogramaTable(text: string): CronogramaParsed | null {
+  const startIdx = text.indexOf(CRONO_TABLE_START);
+  const endIdx = text.indexOf(CRONO_TABLE_END);
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null;
+
+  const textBefore = text.substring(0, startIdx).trim();
+  const tableBlock = text.substring(startIdx + CRONO_TABLE_START.length, endIdx).trim();
+
+  const lines = tableBlock
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.startsWith('|') && l.endsWith('|'));
+
+  if (lines.length < 3) return null; // need header + separator + at least 1 row
+
+  // Parse header (first line)
+  const headers = lines[0]
+    .split('|')
+    .map(c => c.trim())
+    .filter(Boolean);
+
+  // Skip separator line (index 1, has ---)
+  // Parse data rows (from index 2 onward)
+  const rows: string[][] = [];
+  for (let i = 2; i < lines.length; i++) {
+    const cells = lines[i]
+      .split('|')
+      .map(c => c.trim())
+      .filter(Boolean);
+    if (cells.length >= 2) {
+      rows.push(cells);
+    }
+  }
+
+  if (rows.length === 0) return null;
+
+  return { textBefore, headers, rows };
+}
+
 // ---- Narrative-specific theme (Doc A) ----
 
 const narrativaTheme: PdfTheme = {
@@ -300,55 +350,109 @@ export async function gerarPDFNarrativa(
 
     y += headingMB + 4;
 
-    // Body text — handle line wrapping and page breaks
+    // Body text — handle line wrapping, page breaks, and cronograma table
     if (section.texto) {
-      doc.setFont(bodyFont, 'normal');
-      doc.setFontSize(bodySize);
-      doc.setTextColor(...bodyColor);
+      // ---- Special handling for cronograma section ----
+      const isCronograma = section.titulo.includes('Cronograma');
+      const cronogramaData = isCronograma ? parseCronogramaTable(section.texto) : null;
 
-      // Check for bullet lines (lines starting with - or *)
-      const lines = section.texto.split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
-        const isBullet = trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('\u2022 ');
+      // Text to render (explanatory text only for cronograma with table)
+      const textToRender = cronogramaData ? cronogramaData.textBefore : section.texto;
 
-        if (y > doc.internal.pageSize.getHeight() - 25) {
+      if (textToRender.trim()) {
+        doc.setFont(bodyFont, 'normal');
+        doc.setFontSize(bodySize);
+        doc.setTextColor(...bodyColor);
+
+        const lines = textToRender.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          const isBullet = trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('\u2022 ');
+
+          if (y > doc.internal.pageSize.getHeight() - 25) {
+            doc.addPage();
+            y = margin;
+          }
+
+          if (isBullet) {
+            const bulletText = trimmed.replace(/^[-*\u2022]\s*/, '');
+            const bulletChar = bulletStyle === 'check' ? '\u2713'
+              : bulletStyle === 'arrow' ? '>'
+              : bulletStyle === 'dash' ? '-'
+              : '\u2022';
+
+            doc.text(bulletChar, margin + 2, y);
+            const wrapped = doc.splitTextToSize(bulletText, contentWidth - bulletIndent);
+            for (const wLine of wrapped) {
+              if (y > doc.internal.pageSize.getHeight() - 20) {
+                doc.addPage();
+                y = margin;
+              }
+              doc.text(wLine, margin + bulletIndent, y);
+              y += bodySize * 0.42;
+            }
+            y += 1.5;
+          } else {
+            const wrapped = doc.splitTextToSize(line, contentWidth);
+            for (const wLine of wrapped) {
+              if (y > doc.internal.pageSize.getHeight() - 20) {
+                doc.addPage();
+                y = margin;
+              }
+              doc.text(wLine, margin, y);
+              y += bodySize * 0.45;
+            }
+            y += 3;
+          }
+        }
+      }
+
+      // ---- Render cronograma table if parsed ----
+      if (cronogramaData) {
+        y += 4; // spacing before table
+
+        if (y > doc.internal.pageSize.getHeight() - 50) {
           doc.addPage();
           y = margin;
         }
 
-        if (isBullet) {
-          // Bullet point
-          const bulletText = trimmed.replace(/^[-*\u2022]\s*/, '');
-          const bulletChar = bulletStyle === 'check' ? '\u2713'
-            : bulletStyle === 'arrow' ? '>'
-            : bulletStyle === 'dash' ? '-'
-            : '\u2022';
+        const { default: autoTable } = await import('jspdf-autotable');
+        autoTable(doc, {
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [cronogramaData.headers],
+          body: cronogramaData.rows,
+          theme: 'plain',
+          headStyles: {
+            fillColor: lighten(primary, 0.82) as [number, number, number],
+            textColor: primary,
+            fontStyle: 'bold',
+            fontSize: 8,
+            cellPadding: 4,
+          },
+          bodyStyles: {
+            textColor: [35, 40, 50],
+            fontSize: 8,
+            cellPadding: 3.5,
+            valign: 'top',
+          },
+          alternateRowStyles: {
+            fillColor: [247, 249, 252] as [number, number, number],
+          },
+          columnStyles: {
+            0: { cellWidth: contentWidth * 0.22, fontStyle: 'bold' },
+            1: { cellWidth: contentWidth * 0.16, halign: 'center' },
+            2: { cellWidth: contentWidth * 0.35 },
+            3: { cellWidth: contentWidth * 0.27 },
+          },
+          styles: {
+            lineColor: [210, 215, 225],
+            lineWidth: 0.15,
+          },
+        });
 
-          doc.text(bulletChar, margin + 2, y);
-          const wrapped = doc.splitTextToSize(bulletText, contentWidth - bulletIndent);
-          for (const wLine of wrapped) {
-            if (y > doc.internal.pageSize.getHeight() - 20) {
-              doc.addPage();
-              y = margin;
-            }
-            doc.text(wLine, margin + bulletIndent, y);
-            y += bodySize * 0.42;
-          }
-          y += 1.5;
-        } else {
-          // Regular paragraph text
-          const wrapped = doc.splitTextToSize(line, contentWidth);
-          for (const wLine of wrapped) {
-            if (y > doc.internal.pageSize.getHeight() - 20) {
-              doc.addPage();
-              y = margin;
-            }
-            doc.text(wLine, margin, y);
-            y += bodySize * 0.45;
-          }
-          y += 3;
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        y = (doc as any).lastAutoTable.finalY + 6;
       }
     }
 
