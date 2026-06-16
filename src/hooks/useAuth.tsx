@@ -1,13 +1,24 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { posthog } from 'posthog-js';
+import { useOrganization, type OrgRole, type Organization } from './useOrganization';
 
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  /** Organização actual do utilizador (null se não tiver) */
+  organization: Organization | null;
+  /** Role do utilizador na organização (null se não tiver org) */
+  orgRole: OrgRole | null;
+  /** Se os dados da org estão a carregar */
+  orgLoading: boolean;
+  /** Refrescar dados da organização */
+  refreshOrg: () => Promise<void>;
+  /** Verificar se o utilizador tem role mínimo na org */
+  hasOrgRoleMin: (minRole: OrgRole) => boolean;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -15,12 +26,25 @@ const AuthContext = createContext<AuthContextValue>({
   session: null,
   loading: true,
   signOut: async () => {},
+  organization: null,
+  orgRole: null,
+  orgLoading: true,
+  refreshOrg: async () => {},
+  hasOrgRoleMin: () => false,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const {
+    organization,
+    role,
+    loading: orgLoading,
+    refresh,
+    hasRoleMin,
+  } = useOrganization(user?.id);
 
   useEffect(() => {
     // Set up listener FIRST
@@ -60,8 +84,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const combinedLoading = loading || orgLoading;
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signOut }}>
+    <AuthContext.Provider value={{
+      user,
+      session,
+      loading: combinedLoading,
+      signOut,
+      organization,
+      orgRole: role,
+      orgLoading,
+      refreshOrg: refresh,
+      hasOrgRoleMin: hasRoleMin,
+    }}>
       {children}
     </AuthContext.Provider>
   );
