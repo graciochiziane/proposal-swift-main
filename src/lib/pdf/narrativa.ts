@@ -102,6 +102,7 @@ const narrativaTheme: PdfTheme = {
 export function seccoesToNarrative(
   seccoes: Record<string, string>,
   labels?: Record<string, string>,
+  includedSections?: Record<string, boolean>,
 ): NarrativeSection[] {
   const defaultLabels: Record<string, string> = {
     contexto: '1. Contexto do Cliente',
@@ -121,6 +122,8 @@ export function seccoesToNarrative(
   // Maintain order by index
   const orderedKeys = Object.keys(defaultLabels);
   for (const key of orderedKeys) {
+    // Respeitar toggles do utilizador: se incluido esta explicitamente false, omitir
+    if (includedSections && includedSections[key] === false) continue;
     if (seccoes[key]?.trim()) {
       sections.push({
         titulo: sectionLabels[key] || key.charAt(0).toUpperCase() + key.slice(1),
@@ -131,6 +134,7 @@ export function seccoesToNarrative(
 
   // Any extra keys not in the default order
   for (const key of Object.keys(seccoes)) {
+    if (includedSections && includedSections[key] === false) continue;
     if (!defaultLabels[key] && seccoes[key]?.trim()) {
       sections.push({
         titulo: sectionLabels[key] || key.charAt(0).toUpperCase() + key.slice(1),
@@ -154,6 +158,7 @@ export async function gerarPDFNarrativa(
   dono: DonoProposta,
   seccoes: Record<string, string>,
   template: PDFTemplate = 'sleek',
+  includedSections?: Record<string, boolean>,
 ) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -161,7 +166,7 @@ export async function gerarPDFNarrativa(
   const contentWidth = pageWidth - margin * 2;
   const primary = hexToRgb(dono.corPrimaria || '#0B5394');
 
-  const narrative = seccoesToNarrative(seccoes);
+  const narrative = seccoesToNarrative(seccoes, undefined, includedSections);
   const cliente = proposta.clienteSnapshot;
   const numSections = narrative.length;
 
