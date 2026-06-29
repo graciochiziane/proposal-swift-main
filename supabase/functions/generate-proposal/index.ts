@@ -168,29 +168,13 @@ Deno.serve(async (req) => {
       minimumFractionDigits: 2,
     });
 
-    // Determinar seccoes a gerar
-    const sections = mode === "assertivo" ? [...BASE_SECTIONS, ...ADVANCED_SECTIONS] : BASE_SECTIONS;
+    // Determinar seccoes a gerar: APENAS as que o utilizador incluiu (enviou no fields)
+    // O frontend ja filtra pelos toggles — se uma key nao existe em fields, o toggle estava OFF
+    const allPossibleSections = mode === "assertivo" ? [...BASE_SECTIONS, ...ADVANCED_SECTIONS] : BASE_SECTIONS;
+    const sections = allPossibleSections.filter((s) => fields[s] && fields[s].trim());
 
-    // Filtrar seccoes com conteudo fornecido pelo utilizador
-    const sectionDescriptions = sections
-      .filter((s) => fields[s] && fields[s].trim())
-      .map((s) => {
-        const labels: Record<string, string> = {
-          contexto: "Contexto do Cliente",
-          problema: "Problema Identificado",
-          solucao: "Solucao Proposta",
-          beneficios: "Beneficios Esperados",
-          impacto: "Impacto Quantificavel do Problema",
-          escopo: "Escopo Detalhado",
-          cronograma: "Cronograma",
-          condicoes: "Condicoes Especiais",
-        };
-        return `- ${labels[s] || s}: "${fields[s]}"`;
-      })
-      .join("\n");
-
-    // Seccoes que faltam (a IA deve gerar baseado nos dados disponiveis)
-    const missingSections = sections.filter((s) => !fields[s] || !fields[s].trim());
+    // Nao ha seccoes em falta — o utilizador escolheu explicitamente o que quer
+    // A IA deve gerar conteudo apenas para as seccoes fornecidas
 
     // A seccao investimento e sempre gerada automaticamente
     const investimentoSection = `O investimento total para este projecto e de ${totalFormatado} (IVA incluido). O detalhamento por modulos pode ser consultado na Cotacao N. ${proposta.numero}-FIN em anexo.`;
@@ -208,7 +192,7 @@ REGRAS CRITICAS (ANTI-ALUCINACAO):
 6. Escreva em portugues de Mocambique. NAO use emojis.
 7. Cada seccao deve ter 2-4 paragrafos substanciais (minimo 100 palavras por seccao).
 8. Use paragrafos bem estruturados, com topicos claros e progressao logica.
-${missingSections.length > 0 ? `9. As seguintes seccoes NAO foram preenchidas pelo utilizador - gere conteudo contextual com base nos dados da cotacao e info do cliente, mas seja generico: ${missingSections.join(", ")}` : ""}
+9. NAO gere seccoes que nao foram solicitadas. Gere APENAS: ${[...sections, "investimento"].join(", ")}.
 ${sections.includes("cronograma") ? `10. A seccao "cronograma" DEVE seguir este formato obrigatorio:
 - Primeiro, escreva 1-2 paragrafos de texto explicativo sobre a abordagem temporal do projecto.
 - Depois, inclua EXACTAMENTE esta marcacao seguida de uma tabela em formato pipe:
@@ -226,14 +210,11 @@ OUTPUT FORMATO:
 Responda APENAS com JSON valido (sem markdown, sem code fences) no seguinte formato:
 {
   "seccoes": {
-    "contexto": "...",
-    "problema": "...",
-    "solucao": "...",
-    "beneficios": "...",
-    ${mode === "assertivo" ? '"impacto": "...", "escopo": "...", "cronograma": "...", "condicoes": "...",' : ""}
+${sections.map((s) => `    "${s}": "..."`).join(",\n")},
     "investimento": "${investimentoSection}"
   }
-}`;
+}
+GERE APENAS as seccoes listadas acima. NAO adicione seccoes extra.`;
 
     const userPrompt = `CRIACAO DE PROPOSTA COMERCIAL
 

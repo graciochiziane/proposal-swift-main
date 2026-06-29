@@ -89,6 +89,13 @@ export default function GerarPropostaIA() {
         if (existing.tone) setTone(existing.tone);
         if (existing.sector) setSector(existing.sector);
         if (existing.input_json) setFields(existing.input_json);
+        // Restaurar toggles: seccoes que estao no output estavam incluidas
+        const outputKeys = existing.edited_json || existing.output_json || {};
+        const restoredToggles: Record<string, boolean> = {};
+        for (const key of Object.keys(outputKeys)) {
+          if (key !== 'investimento') restoredToggles[key] = true;
+        }
+        setIncludedSections(prev => ({ ...prev, ...restoredToggles }));
         setStep(3);
       }
     })();
@@ -218,7 +225,7 @@ export default function GerarPropostaIA() {
     if (!proposta || !dono || !seccoes) return;
     setIsExporting(true);
     try {
-      await gerarPDFNarrativa(proposta, dono, seccoes);
+      await gerarPDFNarrativa(proposta, dono, seccoes, 'sleek', includedSections);
       if (propostaAiId) {
         try {
           await propostaAiService.markExported(propostaAiId);
