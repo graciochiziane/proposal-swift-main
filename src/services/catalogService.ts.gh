@@ -1,0 +1,77 @@
+import { supabase } from '@/integrations/supabase/client';
+import type { CatalogoItem } from '@/types';
+import { OrganizationService } from './organizationService';
+
+export const CatalogService = {
+  /**
+   * Obtém todos os itens do catálogo do utilizador atual
+   */
+  async getCatalogo(): Promise<CatalogoItem[]> {
+    const orgId = await OrganizationService.getOrgIdForInsert();
+
+    let query = supabase
+      .from('catalog_items')
+      .select('*')
+      .order('nome');
+
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Erro ao buscar catálogo:', error);
+      throw error;
+    }
+
+    return data.map(item => ({
+      id: item.id,
+      nome: item.nome,
+      precoUnitario: Number(item.preco_unitario),
+    }));
+  },
+
+  /**
+   * Adiciona ou atualiza um item no catálogo (Upsert atómico por owner_id + nome)
+   * Requer UNIQUE constraint: (owner_id, nome) na tabela catalog_items
+   */
+  async salvarItem(item: Omit<CatalogoItem, 'id'>): Promise<void> {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) throw new Error('Não autenticado');
+
+    const orgId = await OrganizationService.getOrgIdForInsert();
+
+    const { error } = await supabase
+      .from('catalog_items')
+      .upsert({
+        owner_id: userData.user.id,
+        organization_id: orgId,
+        nome: item.nome,
+        preco_unitario: item.precoUnitario,
+      }, {
+        onConflict: 'owner_id,nome',
+      });
+
+    if (error) {
+      console.error('Erro ao salvar item do catálogo:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Remove um item do catálogo
+   */
+  async removerItem(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('catalog_items')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Erro ao remover item do catálogo:', error);
+      throw error;
+    }
+  }
+};
+
