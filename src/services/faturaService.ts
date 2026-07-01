@@ -88,10 +88,18 @@ export async function converterPropostaEmFactura(
 // ===== LISTAR FATURAS DO USER =====
 
 export async function getFaturas(): Promise<Fatura[]> {
-  const { data, error } = await supabase
+  const orgId = await OrganizationService.getOrgIdForInsert();
+
+  let query = supabase
     .from('invoices')
     .select('*')
     .order('created_at', { ascending: false });
+
+  if (orgId) {
+    query = query.eq('organization_id', orgId);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw new Error('Erro ao buscar facturas: ' + error.message);
   return (data as Fatura[]) ?? [];
@@ -122,11 +130,19 @@ export async function getFaturaById(id: string): Promise<Fatura> {
 // ===== FACTURAS POR PROPOSTA =====
 
 export async function getFaturasPorProposta(propostaId: string): Promise<Fatura[]> {
-  const { data, error } = await supabase
+  const orgId = await OrganizationService.getOrgIdForInsert();
+
+  let query = supabase
     .from('invoices')
     .select('*')
     .eq('proposal_id', propostaId)
     .order('created_at', { ascending: false });
+
+  if (orgId) {
+    query = query.eq('organization_id', orgId);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw new Error('Erro ao buscar facturas: ' + error.message);
   return (data as Fatura[]) ?? [];
