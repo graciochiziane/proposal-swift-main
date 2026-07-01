@@ -11,10 +11,7 @@ export interface Invitation {
   accepted_at: string | null;
   expires_at: string;
   created_at: string;
-}
-
-export interface InvitationWithInviter extends Invitation {
-  inviter_profile: { nome: string | null; email: string } | null;
+  inviterNome: string | null;
 }
 
 // ── Service ──
@@ -39,20 +36,34 @@ export const InvitationService = {
       throw new Error('Nao tem organizacao');
     }
 
-    // Verificar se email ja e membro
-    const { data: existingMember } = await supabase
-      .from('organization_members')
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Verificar se o email ja e utilizador e membro desta org
+    const { data: existingUser } = await supabase
+      .from('profiles')
       .select('id')
-      .eq('organization_id', membership.organization_id)
-      .eq('user_id', user.id)
+      .eq('email', normalizedEmail)
       .maybeSingle();
+
+    if (existingUser) {
+      const { data: existingMember } = await supabase
+        .from('organization_members')
+        .select('id')
+        .eq('organization_id', membership.organization_id)
+        .eq('user_id', existingUser.id)
+        .maybeSingle();
+
+      if (existingMember) {
+        throw new Error('Este utilizador ja e membro da organizacao.');
+      }
+    }
 
     // Verificar se ha convite pendente para este email
     const { data: pendingInvite } = await supabase
       .from('organization_invitations')
       .select('id')
       .eq('organization_id', membership.organization_id)
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .is('accepted_at', null)
       .gte('expires_at', new Date().toISOString())
       .maybeSingle();
@@ -65,7 +76,7 @@ export const InvitationService = {
       .from('organization_invitations')
       .insert({
         organization_id: membership.organization_id,
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         role,
         invited_by: user.id,
       })
@@ -75,14 +86,14 @@ export const InvitationService = {
     if (error) throw error;
     if (!data) throw new Error('Falha ao criar convite');
 
-    return data as unknown as Invitation;
+    return { ...data, inviterNome: null } as unknown as Invitation;
   },
 
   /**
    * Lista convites pendentes da organizacao do utilizador.
    * Requer owner ou admin.
    */
-  async getPendingInvitations(): Promise<InvitationWithInviter[]> {
+  async getPendingInvitations(): Promise<Invitation[]> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
@@ -94,9 +105,10 @@ export const InvitationService = {
 
     if (!membership?.organization_id) return [];
 
+    // Buscar convites (sem join — FK invited_by -> auth.users)
     const { data, error } = await supabase
       .from('organization_invitations')
-      .select('*, inviter_profile:invited_by (nome, email)')
+      .select('*')
       .eq('organization_id', membership.organization_id)
       .is('accepted_at', null)
       .gte('expires_at', new Date().toISOString())
@@ -107,7 +119,27 @@ export const InvitationService = {
       return [];
     }
 
-    return (data || []) as unknown as InvitationWithInviter[];
+    if (!data || data.length === 0) return [];
+
+    // Buscar profiles dos inviters separadamente
+    const inviterIds = [...new Set((data as any[]).map((i: any) => i.invited_by).filter(Boolean))] as string[];
+    let profileMap = new Map<string, string | null>();
+
+    if (inviterIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, nome')
+        .in('id', inviterIds);
+
+      (profiles || []).forEach((p: any) => {
+        profileMap.set(p.id, p.nome);
+      });
+    }
+
+    return (data as any[]).map((inv: any) => ({
+      ...inv,
+      inviterNome: profileMap.get(inv.invited_by) ?? null,
+    }));
   },
 
   /**
@@ -195,7 +227,6 @@ export const InvitationService = {
 
   /**
    * Lista convites pendentes dirigidos ao utilizador actual.
-   * Usado para mostrar "Tem convites pendentes" no header.
    */
   async getMyPendingInvitations(): Promise<Invitation[]> {
     const { data: { user } } = await supabase.auth.getUser();
@@ -209,6 +240,7 @@ export const InvitationService = {
 
     if (!profile?.email) return [];
 
+    // O join organizations(nome) FUNCIONA porque FK aponta para organizations(id)
     const { data, error } = await supabase
       .from('organization_invitations')
       .select('*, organizations(nome)')
@@ -218,6 +250,6 @@ export const InvitationService = {
       .order('created_at', { ascending: false });
 
     if (error) return [];
-    return (data || []) as unknown as Invitation[];
+    return ((data || []) as any[]).map((d: any) => ({ ...d, inviterNome: null }));
   },
 };

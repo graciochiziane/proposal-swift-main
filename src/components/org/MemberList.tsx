@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Trash2, Shield, MoreHorizontal } from 'lucide-react';
+import { Trash2, MoreHorizontal } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { MemberService } from '@/services/memberService';
 import { InvitationService } from '@/services/invitationService';
@@ -9,7 +9,7 @@ import type { OrgRole } from '@/hooks/useOrganization';
 import RoleBadge from './RoleBadge';
 import InviteModal from './InviteModal';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,13 +17,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,7 +39,7 @@ function getInitials(name: string | null, email: string): string {
 }
 
 export default function MemberList() {
-  const { user, orgRole, hasOrgRoleMin, refreshOrg } = useAuth();
+  const { user, hasOrgRoleMin, refreshOrg } = useAuth();
   const [members, setMembers] = useState<MemberWithProfile[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,7 +80,7 @@ export default function MemberList() {
     if (!removeTarget) return;
     try {
       await MemberService.removeMember(removeTarget.id);
-      toast.success(`${removeTarget.profiles?.nome || 'Membro'} removido`);
+      toast.success(`${removeTarget.profileNome || 'Membro'} removido`);
       setRemoveTarget(null);
       fetchData();
       refreshOrg();
@@ -129,8 +122,7 @@ export default function MemberList() {
       <Card>
         <CardContent className="p-0">
           {members.map((member, i) => {
-            const profile = member.profiles;
-            const isSelf = profile?.id === user?.id;
+            const isSelf = member.user_id === user?.id;
             const isOwner = member.role === 'owner';
 
             return (
@@ -138,20 +130,20 @@ export default function MemberList() {
                 <div className="flex items-center gap-4 px-4 py-3">
                   <Avatar className="h-9 w-9 shrink-0">
                     <AvatarFallback className="bg-primary/15 text-primary text-sm font-semibold">
-                      {getInitials(profile?.nome, profile?.email || '')}
+                      {getInitials(member.profileNome, member.profileEmail)}
                     </AvatarFallback>
                   </Avatar>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium truncate">
-                        {profile?.nome || 'Sem nome'}
+                        {member.profileNome || 'Sem nome'}
                       </span>
                       {isSelf && (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">voce</Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">{profile?.email}</p>
+                    <p className="text-xs text-muted-foreground truncate">{member.profileEmail}</p>
                   </div>
 
                   {canManage && !isOwner ? (
@@ -183,7 +175,7 @@ export default function MemberList() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : (
-                    <RoleBadge role={member.role} />
+                    <RoleBadge role={member.role as any} />
                   )}
                 </div>
                 {i < members.length - 1 && <Separator />}
@@ -234,7 +226,7 @@ export default function MemberList() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remover Membro</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem a certeza que deseja remover <strong>{removeTarget?.profiles?.nome || 'este membro'}</strong>?
+              Tem a certeza que deseja remover <strong>{removeTarget?.profileNome || 'este membro'}</strong>?
               O utilizador perdera acesso a todos os dados da organizacao.
             </AlertDialogDescription>
           </AlertDialogHeader>

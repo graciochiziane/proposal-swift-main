@@ -61,7 +61,7 @@ export async function converterPropostaEmFactura(
 
   // 4. Copiar items da proposta para a factura
   if (propItems && propItems.length > 0) {
-    const invoiceItems = propItems.map((item: InvoiceItemRow) => ({
+    const invoiceItems = propItems.map((item: any) => ({
       invoice_id: invoice.id,
       nome: item.nome,
       quantidade: item.quantidade,

@@ -1,10 +1,19 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { Enums } from '@/integrations/supabase/types';
-import type { OrgRole, OrgMember } from '@/hooks/useOrganization';
+import type { OrgRole } from '@/hooks/useOrganization';
 
 // ── Types ──
-export interface MemberWithProfile extends OrgMember {
-  profiles: { id: string; nome: string | null; email: string } | null;
+// Usamos flat fields em vez de join porque o FK user_id aponta para
+// auth.users(id), NAO para profiles(id). O join Supabase nao consegue
+// resolver "profiles:user_id" quando o FK alvo e auth.users.
+export interface MemberWithProfile {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  role: string;
+  joined_at: string;
+  invited_by: string | null;
+  profileNome: string | null;
+  profileEmail: string;
 }
 
 // ── Service ──
@@ -12,7 +21,7 @@ export const MemberService = {
 
   /**
    * Lista todos os membros da organizacao do utilizador actual,
-   * com dados do profile.
+   * com dados do profile buscados em query separada.
    */
   async getMembers(): Promise<MemberWithProfile[]> {
     const { data: { user } } = await supabase.auth.getUser();
@@ -27,10 +36,10 @@ export const MemberService = {
 
     if (!membership?.organization_id) return [];
 
-    // 2. Buscar todos os membros com profiles
+    // 2. Buscar todos os membros da org (sem join)
     const { data, error } = await supabase
       .from('organization_members')
-      .select('*, profiles:user_id (id, nome, email)')
+      .select('*')
       .eq('organization_id', membership.organization_id)
       .order('joined_at', { ascending: true });
 
@@ -39,7 +48,33 @@ export const MemberService = {
       throw error;
     }
 
-    return (data || []) as unknown as MemberWithProfile[];
+    const members = (data || []) as any[];
+    if (members.length === 0) return [];
+
+    // 3. Buscar profiles separadamente
+    // RLS profiles_select_org permite ler profiles da mesma org
+    const userIds = members.map((m: any) => m.user_id);
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, nome, email')
+      .in('id', userIds);
+
+    const profileMap = new Map<string, { nome: string | null; email: string }>();
+    (profiles || []).forEach((p: any) => {
+      profileMap.set(p.id, { nome: p.nome, email: p.email || '' });
+    });
+
+    // 4. Merge membros com profiles
+    return members.map((m: any) => ({
+      id: m.id,
+      organization_id: m.organization_id,
+      user_id: m.user_id,
+      role: m.role,
+      joined_at: m.joined_at,
+      invited_by: m.invited_by,
+      profileNome: profileMap.get(m.user_id)?.nome ?? null,
+      profileEmail: profileMap.get(m.user_id)?.email ?? '',
+    }));
   },
 
   /**

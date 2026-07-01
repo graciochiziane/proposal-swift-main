@@ -322,8 +322,9 @@ export const PropostaService = {
         iva_percentual: input.ivaPercentual,
         total: totais.total,
       } as Partial<ProposalRow>)
-      .eq('id', id)
-      .eq('owner_id', userData.user.id);
+      .eq('id', id);
+      // RLS protege a actualizacao — sem filter owner_id
+      // (na org, qualquer membro pode editar propostas da org)
 
     if (propError) {
       console.error('Erro ao atualizar proposta:', propError);
