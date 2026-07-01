@@ -33,8 +33,7 @@ export const CatalogService = {
   },
 
   /**
-   * Adiciona ou atualiza um item no catálogo (Upsert atómico por owner_id + nome)
-   * Requer UNIQUE constraint: (owner_id, nome) na tabela catalog_items
+   * Adiciona ou atualiza um item no catálogo (Upsert atómico por organization_id + nome)
    */
   async salvarItem(item: Omit<CatalogoItem, 'id'>): Promise<void> {
     const { data: userData } = await supabase.auth.getUser();
@@ -50,7 +49,7 @@ export const CatalogService = {
         nome: item.nome,
         preco_unitario: item.precoUnitario,
       }, {
-        onConflict: 'owner_id,nome',
+        onConflict: 'organization_id,nome',
       });
 
     if (error) {
