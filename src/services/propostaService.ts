@@ -331,8 +331,14 @@ export const PropostaService = {
       throw propError;
     }
 
-    await supabase.from('proposal_items').delete().eq('proposal_id', id);
+    // Buscar IDs dos items antigos antes de qualquer alteração
+    const { data: oldItems } = await supabase
+      .from('proposal_items')
+      .select('id')
+      .eq('proposal_id', id);
+    const oldItemIds = (oldItems || []).map(i => i.id);
 
+    // Inserir novos items primeiro — se falhar, os antigos ficam intactos
     if (itens.length > 0) {
       const itemsToInsert = itens.map((item, index) => ({
         proposal_id: id,
@@ -351,6 +357,11 @@ export const PropostaService = {
         console.error('Erro ao atualizar items:', itemsError);
         throw itemsError;
       }
+    }
+
+    // Apagar só os items antigos (por ID específico)
+    if (oldItemIds.length > 0) {
+      await supabase.from('proposal_items').delete().in('id', oldItemIds);
     }
   },
 
