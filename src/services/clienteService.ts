@@ -14,9 +14,15 @@ export const ClienteService = {
       .select('*')
       .order('nome');
 
-    // Se tem org, filtrar por org (RLS ja filtra, mas ser explicito)
+    // Se tem org, filtrar por org
     if (orgId) {
       query = query.eq('organization_id', orgId);
+    } else {
+      // Solo user: filtro explicito por owner_id (defence-in-depth)
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user) {
+        query = query.eq('owner_id', userData.user.id);
+      }
     }
 
     const { data, error } = await query;
