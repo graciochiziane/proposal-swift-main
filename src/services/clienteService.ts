@@ -1,19 +1,25 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Cliente } from '@/types';
+import { OrganizationService } from './organizationService';
 
 export const ClienteService = {
   /**
    * Obtém todos os clientes do utilizador atual
    */
   async getClientes(): Promise<Cliente[]> {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user) return [];
+    const orgId = await OrganizationService.getOrgIdForInsert();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('clients')
       .select('*')
-      .eq('owner_id', userData.user.id)
       .order('nome');
+
+    // Se tem org, filtrar por org (RLS ja filtra, mas ser explicito)
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Erro ao buscar clientes:', error);
@@ -38,10 +44,13 @@ export const ClienteService = {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) throw new Error('Utilizador não autenticado');
 
+    const orgId = await OrganizationService.getOrgIdForInsert();
+
     const { data, error } = await supabase
       .from('clients')
       .insert([{
         owner_id: userData.user.id,
+        organization_id: orgId,
         nome: cliente.nome,
         email: cliente.email || null,
         telefone: cliente.telefone || null,

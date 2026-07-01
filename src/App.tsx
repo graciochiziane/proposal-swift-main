@@ -14,6 +14,7 @@ import Propostas from "@/pages/Propostas";
 import ResumoProposta from "@/pages/ResumoProposta";
 import GerarPropostaIA from "@/pages/GerarPropostaIA";
 import Configuracoes from "@/pages/Configuracoes";
+import Organizacao from "@/pages/Organizacao";
 import Admin from "@/pages/Admin";
 import Auth from "@/pages/Auth";
 import ForgotPassword from "@/pages/ForgotPassword";
@@ -51,6 +52,7 @@ const App = () => (
                       <Route path="/proposta/:id" element={<ResumoProposta />} />
                       <Route path="/proposta/:id/gerar-ia" element={<GerarPropostaIA />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
+                      <Route path="/organizacao" element={<Organizacao />} />
                       <Route path="/admin" element={<Admin />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>

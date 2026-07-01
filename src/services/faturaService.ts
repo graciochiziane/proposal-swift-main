@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Fatura, ItemFatura, StatusFatura } from '@/types';
+import { OrganizationService } from './organizationService';
 
 // ===== HELPERS =====
 
@@ -43,6 +44,8 @@ export async function converterPropostaEmFactura(
     .from('invoices')
     .insert({
       owner_id: proposta.owner_id,
+      organization_id: proposta.organization_id,
+      created_by: proposta.created_by || proposta.owner_id,
       proposal_id: proposta.id,
       client_id: proposta.client_id,
       data_emissao: new Date().toISOString().split('T')[0],

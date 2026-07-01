@@ -1,19 +1,24 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { CatalogoItem } from '@/types';
+import { OrganizationService } from './organizationService';
 
 export const CatalogService = {
   /**
    * Obtém todos os itens do catálogo do utilizador atual
    */
   async getCatalogo(): Promise<CatalogoItem[]> {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user) return [];
+    const orgId = await OrganizationService.getOrgIdForInsert();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('catalog_items')
       .select('*')
-      .eq('owner_id', userData.user.id)
       .order('nome');
+
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Erro ao buscar catálogo:', error);
@@ -35,10 +40,13 @@ export const CatalogService = {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) throw new Error('Não autenticado');
 
+    const orgId = await OrganizationService.getOrgIdForInsert();
+
     const { error } = await supabase
       .from('catalog_items')
       .upsert({
         owner_id: userData.user.id,
+        organization_id: orgId,
         nome: item.nome,
         preco_unitario: item.precoUnitario,
       }, {

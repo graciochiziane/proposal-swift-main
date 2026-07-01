@@ -12,6 +12,7 @@ import {
   Moon,
   HelpCircle,
   LogOut,
+  Building2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -57,7 +58,7 @@ function planBadgeClasses(plano: string): string {
 }
 
 export default function UserProfile({ compact = false }: { compact?: boolean }) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, organization, orgRole } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -175,6 +176,13 @@ export default function UserProfile({ compact = false }: { compact?: boolean }) 
         </DropdownMenuLabel>
 
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => go('/organizacao')}>
+          <Building2 className="mr-2 h-4 w-4" />
+          Organizacao
+          {orgRole && (
+            <span className="ml-auto text-[10px] text-muted-foreground">{orgRole}</span>
+          )}
+        </DropdownMenuItem>
 
         {/* Conta */}
         <DropdownMenuItem onClick={() => go('/configuracoes')}>

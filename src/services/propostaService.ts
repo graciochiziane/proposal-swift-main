@@ -3,6 +3,7 @@ import { calcularSubtotal, calcularTotal } from '@/lib/calculos';
 import type { ItemProposta, DescontoTipo, Proposta } from '@/types';
 import type { Database } from '@/integrations/supabase/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { OrganizationService } from './organizationService';
 
 // ── Supabase type aliases ──
 type ProposalRow = Database['public']['Tables']['proposals']['Row'];
@@ -90,10 +91,9 @@ export const PropostaService = {
    * Join com clients(nome, empresa) — uma query, sem busca separada.
    */
   async getPropostas(): Promise<PropostaResumo[]> {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user) return [];
+    const orgId = await OrganizationService.getOrgIdForInsert();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('proposals')
       .select(`
         id,
@@ -103,10 +103,16 @@ export const PropostaService = {
         total,
         status,
         created_at,
+        created_by,
         clients(nome, empresa)
       `)
-      .eq('owner_id', userData.user.id)
       .order('data', { ascending: false });
+
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Erro ao buscar propostas:', error);
@@ -211,10 +217,14 @@ export const PropostaService = {
     const totais = calcularTotal(subtotal, input.descontoTipo, input.descontoValor, input.ivaPercentual);
 
     // 3. Inserir proposta
+    const orgId = await OrganizationService.getOrgIdForInsert();
+
     const { data: proposta, error: propError } = await supabase
       .from('proposals')
       .insert([{
         owner_id: userData.user.id,
+        organization_id: orgId,
+        created_by: userData.user.id,
         client_id: input.clienteId,
         data: input.data,
         observacoes: input.observacoes || null,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FileText, Users, LayoutDashboard, Menu, X, Settings, Package } from 'lucide-react';
+import { FileText, Users, LayoutDashboard, Menu, X, Settings, Package, Building2 } from 'lucide-react';
 import UserProfile from '@/components/UserProfile';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
 
@@ -10,6 +10,7 @@ const navItems = [
   { label: 'Clientes', path: '/clientes', icon: Users },
   { label: 'Catálogo', path: '/catalogo', icon: Package },
   { label: 'Configurações', path: '/configuracoes', icon: Settings },
+  { label: 'Organização', path: '/organizacao', icon: Building2 },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
