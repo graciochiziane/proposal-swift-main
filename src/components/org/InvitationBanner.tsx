@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Mail, Loader2, X, Building2, Check } from 'lucide-react';
 import { InvitationService, type Invitation } from '@/services/invitationService';
@@ -21,10 +22,22 @@ function roleLabel(role: string): string {
 
 export default function InvitationBanner() {
   const { organization, refreshOrg } = useAuth();
+  const navigate = useNavigate();
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [fetchState, setFetchState] = useState<FetchState>('idle');
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const acceptingRef = useRef(false);
+
+  // Se existe token no sessionStorage (user veio de link de email apos login),
+  // redirecionar para a pagina de aceitacao
+  useEffect(() => {
+    const pendingToken = sessionStorage.getItem('invite_token');
+    if (pendingToken && !organization) {
+      sessionStorage.removeItem('invite_token');
+      navigate(`/invite/accept?token=${pendingToken}`, { replace: true });
+      return;
+    }
+  }, [organization, navigate]);
 
   const fetchInvitations = useCallback(async () => {
     // Se já tem organização, não precisa de ver convites

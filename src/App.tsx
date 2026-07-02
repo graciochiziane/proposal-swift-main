@@ -20,6 +20,7 @@ import Auth from "@/pages/Auth";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "./pages/NotFound.tsx";
+import AcceptInvite from "@/pages/AcceptInvite";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/invite/accept" element={<AcceptInvite />} />
 
             {/* Protected app */}
             <Route

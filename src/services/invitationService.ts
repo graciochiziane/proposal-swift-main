@@ -7,15 +7,62 @@ export interface Invitation {
   organization_id: string;
   email: string;
   role: OrgRole;
+  token: string;
   invited_by: string;
   accepted_at: string | null;
   expires_at: string;
   created_at: string;
   inviterNome: string | null;
+  orgNome?: string | null;
 }
 
 // ── Service ──
 export const InvitationService = {
+
+  /**
+   * Envia email de convite via Edge Function (fire-and-forget).
+   * Privado — chamado internamente por create() e resend().
+   */
+  async _sendInviteEmail(
+    invitationId: string,
+    token: string,
+    email: string,
+    role: string,
+    organizationId: string
+  ): Promise<void> {
+    // Buscar nome da org
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('nome')
+      .eq('id', organizationId)
+      .single();
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const functionUrl = supabaseUrl
+      ? `${supabaseUrl}/functions/v1/send-invite-email`
+      : null;
+
+    if (!functionUrl) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const authToken = session?.access_token;
+
+    await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      },
+      body: JSON.stringify({
+        invitation_id: invitationId,
+        organization_id: organizationId,
+        email,
+        role,
+        org_nome: org?.nome || 'Organização',
+        token,
+      }),
+    });
+  },
 
   /**
    * Cria um convite para um email.
@@ -85,6 +132,13 @@ export const InvitationService = {
 
     if (error) throw error;
     if (!data) throw new Error('Falha ao criar convite');
+
+    // Disparar email de convite via Edge Function (fire-and-forget)
+    // Se a Edge Function nao estiver deployada ou RESEND_API_KEY nao existir,
+    // o convite continua funcional via banner in-app.
+    this._sendInviteEmail(data.id, data.token, normalizedEmail, role, membership.organization_id).catch(
+      (emailErr) => console.warn('Convite criado mas email nao enviado:', emailErr)
+    );
 
     return { ...data, inviterNome: null } as unknown as Invitation;
   },
@@ -215,6 +269,97 @@ export const InvitationService = {
       .from('organization_invitations')
       .update({ accepted_at: new Date().toISOString() })
       .eq('id', invitationId);
+
+    if (acceptError) throw acceptError;
+
+    // Actualizar profile com organization_id
+    await supabase
+      .from('profiles')
+      .update({ organization_id: invite.organization_id })
+      .eq('id', user.id);
+  },
+
+  /**
+   * Busca um convite pelo token (usado na rota /invite/accept).
+   * Disponivel para utilizadores nao autenticados (RLS oi_select_by_token).
+   */
+  async getByToken(token: string): Promise<Invitation | null> {
+    // Usa RPC SECURITY DEFINER — nao depende de RLS, funciona para anon
+    const { data, error } = await supabase
+      .rpc('get_invitation_by_token', { p_token: token });
+
+    if (error || !data || (Array.isArray(data) && data.length === 0)) return null;
+    const row = (Array.isArray(data) ? data[0] : data) as any;
+    return {
+      id: row.id,
+      organization_id: row.organization_id,
+      email: row.email,
+      role: row.role,
+      token: row.token,
+      invited_by: row.invited_by,
+      accepted_at: row.accepted_at,
+      expires_at: row.expires_at,
+      created_at: row.created_at,
+      inviterNome: null,
+      orgNome: row.org_nome || null,
+    };
+  },
+
+  /**
+   * Aceita um convite pelo token (usado na rota /invite/accept).
+   * O utilizador deve estar autenticado.
+   */
+  async acceptByToken(token: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Nao autenticado');
+
+    // Buscar convite por token (via RPC — funciona independentemente de RLS)
+    const invite = await this.getByToken(token);
+
+    if (!invite) {
+      throw new Error('Convite nao encontrado ou expirado');
+    }
+
+    // Verificar email
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.email?.toLowerCase() !== invite.email.toLowerCase()) {
+      throw new Error('Este convite nao e para o seu email.');
+    }
+
+    // Verificar se ja e membro
+    const { data: existingMember } = await supabase
+      .from('organization_members')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('organization_id', invite.organization_id)
+      .maybeSingle();
+
+    if (existingMember) {
+      throw new Error('Ja e membro desta organizacao.');
+    }
+
+    // Criar membership
+    const { error: memberError } = await supabase
+      .from('organization_members')
+      .insert({
+        organization_id: invite.organization_id,
+        user_id: user.id,
+        role: invite.role,
+        invited_by: invite.invited_by,
+      });
+
+    if (memberError) throw memberError;
+
+    // Marcar convite como aceite
+    const { error: acceptError } = await supabase
+      .from('organization_invitations')
+      .update({ accepted_at: new Date().toISOString() })
+      .eq('id', invite.id);
 
     if (acceptError) throw acceptError;
 
