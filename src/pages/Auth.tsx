@@ -38,13 +38,9 @@ export default function Auth() {
       toast.error(error.message === 'Invalid login credentials' ? 'Credenciais inválidas' : error.message);
       return;
     }
+    // O useEffect acima redireciona automaticamente quando user muda,
+    // incluindo o caso de invite_token no sessionStorage.
     toast.success('Sessão iniciada');
-    const inviteToken = sessionStorage.getItem('invite_token');
-    if (inviteToken) {
-      navigate(`/invite/accept?token=${inviteToken}`, { replace: true });
-    } else {
-      navigate('/', { replace: true });
-    }
   };
 
   const handleSignup = async (e: React.FormEvent) => {

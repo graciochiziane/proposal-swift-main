@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Loader2, Mail, Check, AlertTriangle, LogIn, UserPlus } from 'lucide-react';
 import { InvitationService } from '@/services/invitationService';
@@ -50,10 +50,8 @@ export default function AcceptInvite() {
       setRole(invite.role);
 
       if (user) {
-        // User logado: tentar aceitar automaticamente
         setPageState('accepting');
       } else {
-        // User nao logado: mostrar opcao de login/signup
         setPageState('not_logged_in');
         sessionStorage.setItem('invite_token', token);
       }
@@ -63,14 +61,7 @@ export default function AcceptInvite() {
     });
   }, [token]); // Intencionalmente sem 'user' — corre uma vez
 
-  // Quando o user fica logado (AuthContext), tentar aceitar
-  useEffect(() => {
-    if (user && pageState === 'not_logged_in') {
-      handleAccept();
-    }
-  }, [user, pageState]);
-
-  const handleAccept = async () => {
+  const handleAccept = useCallback(async () => {
     if (acceptingRef.current || !token) return;
     acceptingRef.current = true;
     setPageState('accepting');
@@ -85,7 +76,14 @@ export default function AcceptInvite() {
       setErrorMsg(err.message || 'Erro ao aceitar o convite.');
       acceptingRef.current = false;
     }
-  };
+  }, [token, refreshOrg]);
+
+  // Quando o user fica logado OU ja esta logado, tentar aceitar
+  useEffect(() => {
+    if (user && (pageState === 'not_logged_in' || pageState === 'accepting') && !acceptingRef.current) {
+      handleAccept();
+    }
+  }, [user, pageState, handleAccept]);
 
   const goToAuth = (mode: 'login' | 'signup') => {
     // O token ja esta em sessionStorage — a pos-login o effect acima dispara

@@ -16,6 +16,29 @@ export interface Invitation {
   orgNome?: string | null;
 }
 
+// ── Internal helper: core accept logic via RPC (atomic, no race conditions) ──
+async function _acceptViaRpc(invitationId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Nao autenticado');
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', user.id)
+    .single();
+
+  const userEmail = profile?.email?.toLowerCase();
+  if (!userEmail) throw new Error('Perfil sem email');
+
+  const { error } = await supabase.rpc('accept_invitation', {
+    p_invitation_id: invitationId,
+    p_user_id: user.id,
+    p_user_email: userEmail,
+  });
+
+  if (error) throw new Error(error.message || 'Erro ao aceitar convite');
+}
+
 // ── Service ──
 export const InvitationService = {
 
@@ -30,7 +53,6 @@ export const InvitationService = {
     role: string,
     organizationId: string
   ): Promise<void> {
-    // Buscar nome da org
     const { data: org } = await supabase
       .from('organizations')
       .select('nome')
@@ -47,21 +69,28 @@ export const InvitationService = {
     const { data: { session } } = await supabase.auth.getSession();
     const authToken = session?.access_token;
 
-    await fetch(functionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      },
-      body: JSON.stringify({
-        invitation_id: invitationId,
-        organization_id: organizationId,
-        email,
-        role,
-        org_nome: org?.nome || 'Organização',
-        token,
-      }),
-    });
+    try {
+      const res = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({
+          invitation_id: invitationId,
+          organization_id: organizationId,
+          email,
+          role,
+          org_nome: org?.nome || 'Organização',
+          token,
+        }),
+      });
+      if (!res.ok) {
+        console.warn('Edge function retornou erro:', res.status, await res.text().catch(() => ''));
+      }
+    } catch (err) {
+      console.warn('Falha ao chamar Edge Function send-invite-email:', err);
+    }
   },
 
   /**
@@ -72,7 +101,6 @@ export const InvitationService = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Nao autenticado');
 
-    // Buscar org_id
     const { data: membership } = await supabase
       .from('organization_members')
       .select('organization_id')
@@ -133,9 +161,6 @@ export const InvitationService = {
     if (error) throw error;
     if (!data) throw new Error('Falha ao criar convite');
 
-    // Disparar email de convite via Edge Function (fire-and-forget)
-    // Se a Edge Function nao estiver deployada ou RESEND_API_KEY nao existir,
-    // o convite continua funcional via banner in-app.
     this._sendInviteEmail(data.id, data.token, normalizedEmail, role, membership.organization_id).catch(
       (emailErr) => console.warn('Convite criado mas email nao enviado:', emailErr)
     );
@@ -159,7 +184,6 @@ export const InvitationService = {
 
     if (!membership?.organization_id) return [];
 
-    // Buscar convites (sem join — FK invited_by -> auth.users)
     const { data, error } = await supabase
       .from('organization_invitations')
       .select('*')
@@ -175,7 +199,6 @@ export const InvitationService = {
 
     if (!data || data.length === 0) return [];
 
-    // Buscar profiles dos inviters separadamente
     const inviterIds = [...new Set((data as any[]).map((i: any) => i.invited_by).filter(Boolean))] as string[];
     let profileMap = new Map<string, string | null>();
 
@@ -209,82 +232,18 @@ export const InvitationService = {
   },
 
   /**
-   * Aceita um convite (por ID do convite).
-   * Cria o membership e marca o convite como aceite.
+   * Aceita um convite por ID (usado pelo InvitationBanner).
+   * Delega tudo ao RPC atomico accept_invitation.
    */
   async accept(invitationId: string): Promise<void> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Nao autenticado');
-
-    // Buscar convite
-    const { data: invite, error: inviteError } = await supabase
-      .from('organization_invitations')
-      .select('*')
-      .eq('id', invitationId)
-      .is('accepted_at', null)
-      .gte('expires_at', new Date().toISOString())
-      .single();
-
-    if (inviteError || !invite) {
-      throw new Error('Convite nao encontrado ou expirado');
-    }
-
-    // Verificar se o email do convite bate com o user
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.email?.toLowerCase() !== invite.email.toLowerCase()) {
-      throw new Error('Este convite nao e para o seu email.');
-    }
-
-    // Verificar se ja e membro
-    const { data: existingMember } = await supabase
-      .from('organization_members')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('organization_id', invite.organization_id)
-      .maybeSingle();
-
-    if (existingMember) {
-      throw new Error('Ja e membro desta organizacao.');
-    }
-
-    // Criar membership
-    const { error: memberError } = await supabase
-      .from('organization_members')
-      .insert({
-        organization_id: invite.organization_id,
-        user_id: user.id,
-        role: invite.role,
-        invited_by: invite.invited_by,
-      });
-
-    if (memberError) throw memberError;
-
-    // Marcar convite como aceite
-    const { error: acceptError } = await supabase
-      .from('organization_invitations')
-      .update({ accepted_at: new Date().toISOString() })
-      .eq('id', invitationId);
-
-    if (acceptError) throw acceptError;
-
-    // Actualizar profile com organization_id
-    await supabase
-      .from('profiles')
-      .update({ organization_id: invite.organization_id })
-      .eq('id', user.id);
+    await _acceptViaRpc(invitationId);
   },
 
   /**
    * Busca um convite pelo token (usado na rota /invite/accept).
-   * Disponivel para utilizadores nao autenticados (RLS oi_select_by_token).
+   * Usa RPC SECURITY DEFINER — funciona para anon.
    */
   async getByToken(token: string): Promise<Invitation | null> {
-    // Usa RPC SECURITY DEFINER — nao depende de RLS, funciona para anon
     const { data, error } = await supabase
       .rpc('get_invitation_by_token', { p_token: token });
 
@@ -308,70 +267,25 @@ export const InvitationService = {
   /**
    * Aceita um convite pelo token (usado na rota /invite/accept).
    * O utilizador deve estar autenticado.
+   * Reusa o mesmo RPC atomico — sem duplicacao de logica.
    */
   async acceptByToken(token: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Nao autenticado');
 
-    // Buscar convite por token (via RPC — funciona independentemente de RLS)
+    // Buscar convite por token para obter o ID
     const invite = await this.getByToken(token);
-
     if (!invite) {
       throw new Error('Convite nao encontrado ou expirado');
     }
 
-    // Verificar email
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.email?.toLowerCase() !== invite.email.toLowerCase()) {
-      throw new Error('Este convite nao e para o seu email.');
-    }
-
-    // Verificar se ja e membro
-    const { data: existingMember } = await supabase
-      .from('organization_members')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('organization_id', invite.organization_id)
-      .maybeSingle();
-
-    if (existingMember) {
-      throw new Error('Ja e membro desta organizacao.');
-    }
-
-    // Criar membership
-    const { error: memberError } = await supabase
-      .from('organization_members')
-      .insert({
-        organization_id: invite.organization_id,
-        user_id: user.id,
-        role: invite.role,
-        invited_by: invite.invited_by,
-      });
-
-    if (memberError) throw memberError;
-
-    // Marcar convite como aceite
-    const { error: acceptError } = await supabase
-      .from('organization_invitations')
-      .update({ accepted_at: new Date().toISOString() })
-      .eq('id', invite.id);
-
-    if (acceptError) throw acceptError;
-
-    // Actualizar profile com organization_id
-    await supabase
-      .from('profiles')
-      .update({ organization_id: invite.organization_id })
-      .eq('id', user.id);
+    // Delegar ao RPC atomico (que tambem verifica email)
+    await _acceptViaRpc(invite.id);
   },
 
   /**
    * Lista convites pendentes dirigidos ao utilizador actual.
+   * Usa RPC SECURITY DEFINER — funciona para utilizadores nao-membros.
    */
   async getMyPendingInvitations(): Promise<Invitation[]> {
     const { data: { user } } = await supabase.auth.getUser();
@@ -385,17 +299,21 @@ export const InvitationService = {
 
     if (!profile?.email) return [];
 
-    // O join organizations(nome) FUNCIONA porque FK aponta para organizations(id)
     const { data, error } = await supabase
-      .from('organization_invitations')
-      .select('*, organizations(nome)')
-      .eq('email', profile.email.toLowerCase())
-      .is('accepted_at', null)
-      .gte('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false });
+      .rpc('get_my_pending_invitations', {
+        p_email: profile.email.toLowerCase(),
+      });
 
-    if (error) return [];
-    return ((data || []) as any[]).map((d: any) => ({ ...d, inviterNome: null }));
+    if (error) {
+      console.error('Erro getMyPendingInvitations RPC:', error);
+      return [];
+    }
+
+    return ((data || []) as any[]).map((d: any) => ({
+      ...d,
+      inviterNome: null,
+      orgNome: d.org_nome || null,
+    }));
   },
 
   /**
@@ -418,7 +336,6 @@ export const InvitationService = {
 
     if (updateErr) throw updateErr;
 
-    // Re-disparar email
     this._sendInviteEmail(
       invite.id,
       (invite as any).token,

@@ -104,7 +104,7 @@ export default function InvitationBanner() {
     <div className="space-y-3 mb-6">
       {invitations.map((inv) => {
         // O join organizations(nome) devolve o campo dentro do objeto
-        const orgName = (inv as any).organizations?.nome || 'Organização';
+        const orgName = inv.orgNome || 'Organização';
         const isAccepting = acceptingId === inv.id;
 
         return (
