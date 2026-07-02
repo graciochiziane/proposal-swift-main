@@ -397,4 +397,34 @@ export const InvitationService = {
     if (error) return [];
     return ((data || []) as any[]).map((d: any) => ({ ...d, inviterNome: null }));
   },
+
+  /**
+   * Reenvia um convite — renova expires_at por 7 dias.
+   */
+  async resend(invitationId: string): Promise<void> {
+    const { data: invite, error: fetchErr } = await supabase
+      .from('organization_invitations')
+      .select('id, token, email, role, organization_id')
+      .eq('id', invitationId)
+      .is('accepted_at', null)
+      .single();
+
+    if (fetchErr || !invite) throw new Error('Convite nao encontrado');
+
+    const { error: updateErr } = await supabase
+      .from('organization_invitations')
+      .update({ expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
+      .eq('id', invitationId);
+
+    if (updateErr) throw updateErr;
+
+    // Re-disparar email
+    this._sendInviteEmail(
+      invite.id,
+      (invite as any).token,
+      invite.email,
+      invite.role,
+      invite.organization_id
+    ).catch((emailErr) => console.warn('Convite renovado mas email nao reenviado:', emailErr));
+  },
 };

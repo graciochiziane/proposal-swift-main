@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Trash2, MoreHorizontal } from 'lucide-react';
+import { Trash2, MoreHorizontal, Shield, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { MemberService } from '@/services/memberService';
 import { InvitationService } from '@/services/invitationService';
@@ -39,11 +39,12 @@ function getInitials(name: string | null, email: string): string {
 }
 
 export default function MemberList() {
-  const { user, hasOrgRoleMin, refreshOrg } = useAuth();
+  const { user, orgRole, hasOrgRoleMin, refreshOrg } = useAuth();
   const [members, setMembers] = useState<MemberWithProfile[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [removeTarget, setRemoveTarget] = useState<MemberWithProfile | null>(null);
+  const [transferTarget, setTransferTarget] = useState<MemberWithProfile | null>(null);
 
   const canManage = hasOrgRoleMin('admin');
 
@@ -96,6 +97,29 @@ export default function MemberList() {
       fetchData();
     } catch (err: any) {
       toast.error(err.message || 'Erro ao cancelar convite');
+    }
+  };
+
+  const handleResendInvite = async (inviteId: string) => {
+    try {
+      await InvitationService.resend(inviteId);
+      toast.success('Convite reenviado (validade renovada por 7 dias)');
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao reenviar convite');
+    }
+  };
+
+  const handleTransferOwnership = async () => {
+    if (!transferTarget) return;
+    try {
+      await MemberService.transferOwnership(transferTarget.id);
+      toast.success(`Ownership transferido para ${transferTarget.profileNome || 'membro'}`);
+      setTransferTarget(null);
+      fetchData();
+      refreshOrg();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao transferir ownership');
     }
   };
 
@@ -165,6 +189,13 @@ export default function MemberList() {
                           </DropdownMenuItem>
                         ))}
                         <DropdownMenuSeparator />
+                        {orgRole === 'owner' && (
+                          <DropdownMenuItem onClick={() => setTransferTarget(member)}>
+                            <Shield className="mr-2 h-4 w-4" />
+                            Transferir Ownership
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={() => setRemoveTarget(member)}
@@ -203,14 +234,24 @@ export default function MemberList() {
                         </span>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleCancelInvite(inv.id)}
-                    >
-                      Cancelar
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleResendInvite(inv.id)}
+                      >
+                        <RefreshCw className="mr-1 h-3 w-3" />
+                        Reenviar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleCancelInvite(inv.id)}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
                   </div>
                   {i < invitations.length - 1 && <Separator />}
                 </div>
@@ -234,6 +275,25 @@ export default function MemberList() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleRemove} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Transfer ownership confirmation dialog */}
+      <AlertDialog open={!!transferTarget} onOpenChange={(open) => !open && setTransferTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Transferir Ownership</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem a certeza que deseja transferir a propriedade para <strong>{transferTarget?.profileNome || 'este membro'}</strong>?
+              Voce passara a ser Admin. Esta accao nao pode ser desfeita pelo novo owner.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleTransferOwnership}>
+              Transferir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

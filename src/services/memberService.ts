@@ -158,4 +158,52 @@ export const MemberService = {
     if (error) return 0;
     return count ?? 0;
   },
+
+  /**
+   * Transfere ownership de um membro para outro.
+   * O owner actual passa a admin.
+   * Apenas o owner pode executar esta operacao.
+   */
+  async transferOwnership(targetMemberId: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Nao autenticado');
+
+    // Buscar o membership do owner actual
+    const { data: ownerMember, error: ownerErr } = await supabase
+      .from('organization_members')
+      .select('id, role')
+      .eq('user_id', user.id)
+      .single();
+
+    if (ownerErr || !ownerMember || ownerMember.role !== 'owner') {
+      throw new Error('Apenas o owner pode transferir a propriedade.');
+    }
+
+    // Buscar o target
+    const { data: target, error: targetErr } = await supabase
+      .from('organization_members')
+      .select('id, role')
+      .eq('id', targetMemberId)
+      .single();
+
+    if (targetErr || !target) throw new Error('Membro de destino nao encontrado.');
+    if (target.role === 'owner') throw new Error('Membro ja e owner.');
+    if (target.id === ownerMember.id) throw new Error('Nao pode transferir para si mesmo.');
+
+    // Downgrade owner -> admin
+    const { error: downErr } = await supabase
+      .from('organization_members')
+      .update({ role: 'admin' })
+      .eq('id', ownerMember.id);
+
+    if (downErr) throw downErr;
+
+    // Upgrade target -> owner
+    const { error: upErr } = await supabase
+      .from('organization_members')
+      .update({ role: 'owner' })
+      .eq('id', targetMemberId);
+
+    if (upErr) throw upErr;
+  },
 };

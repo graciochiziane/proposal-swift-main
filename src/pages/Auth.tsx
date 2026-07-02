@@ -19,7 +19,14 @@ export default function Auth() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) navigate('/', { replace: true });
+    if (!loading && user) {
+      const inviteToken = sessionStorage.getItem('invite_token');
+      if (inviteToken) {
+        navigate(`/invite/accept?token=${inviteToken}`, { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
+    }
   }, [user, loading, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -32,7 +39,12 @@ export default function Auth() {
       return;
     }
     toast.success('Sessão iniciada');
-    navigate('/', { replace: true });
+    const inviteToken = sessionStorage.getItem('invite_token');
+    if (inviteToken) {
+      navigate(`/invite/accept?token=${inviteToken}`, { replace: true });
+    } else {
+      navigate('/', { replace: true });
+    }
   };
 
   const handleSignup = async (e: React.FormEvent) => {
