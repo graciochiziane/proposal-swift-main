@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { OrgRole } from '@/hooks/useOrganization';
+import { OrganizationService } from '@/services/organizationService';
 
 // ── Types ──
 // Usamos flat fields em vez de join porque o FK user_id aponta para
@@ -27,20 +28,15 @@ export const MemberService = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
-    // 1. Buscar org_id do user
-    const { data: membership } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    // 1. Buscar org_id activa do user (multi-org: usar a org seleccionada)
+    const orgId = await OrganizationService._getMyOrgId();
+    if (!orgId) return [];
 
-    if (!membership?.organization_id) return [];
-
-    // 2. Buscar todos os membros da org (sem join)
+    // 2. Buscar todos os membros da org activa (sem join)
     const { data, error } = await supabase
       .from('organization_members')
       .select('*')
-      .eq('organization_id', membership.organization_id)
+      .eq('organization_id', orgId)
       .order('joined_at', { ascending: true });
 
     if (error) {
@@ -139,21 +135,13 @@ export const MemberService = {
    * Conta membros da organizacao do utilizador.
    */
   async countMembers(): Promise<number> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return 0;
-
-    const { data: membership } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (!membership?.organization_id) return 0;
+    const orgId = await OrganizationService._getMyOrgId();
+    if (!orgId) return 0;
 
     const { count, error } = await supabase
       .from('organization_members')
       .select('*', { count: 'exact', head: true })
-      .eq('organization_id', membership.organization_id);
+      .eq('organization_id', orgId);
 
     if (error) return 0;
     return count ?? 0;

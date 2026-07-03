@@ -104,15 +104,7 @@ BEGIN
     RAISE EXCEPTION 'Ja e membro desta organizacao';
   END IF;
 
-  -- 3. Check if already in ANOTHER org (prevent multi-org)
-  SELECT organization_id INTO v_existing_org
-    FROM public.organization_members
-    WHERE user_id = p_user_id
-    LIMIT 1;
-
-  IF v_existing_org IS NOT NULL AND v_existing_org != v_invite.organization_id THEN
-    RAISE EXCEPTION 'Ja pertence a outra organizacao';
-  END IF;
+  -- 3. (REMOVED: multi-org is now allowed — users can join multiple orgs)
 
   -- 4. Insert membership
   INSERT INTO public.organization_members (organization_id, user_id, role, invited_by)
@@ -123,10 +115,11 @@ BEGIN
     SET accepted_at = now()
     WHERE id = p_invitation_id;
 
-  -- 6. Update profile with organization_id
+  -- 6. Update profile.organization_id only if NULL (set initial active org)
   UPDATE public.profiles
     SET organization_id = v_invite.organization_id
-    WHERE id = p_user_id;
+    WHERE id = p_user_id
+      AND organization_id IS NULL;
 END;
 $$;
 

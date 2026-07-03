@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables, Enums } from '@/integrations/supabase/types';
 
@@ -18,12 +18,21 @@ export interface OrgMemberWithProfile {
   profileEmail: string;
 }
 
+/** Uma membership com dados da organização */
+export interface MembershipWithOrg {
+  organization_id: string;
+  role: OrgRole;
+  organization: Organization;
+}
+
 interface OrganizationContextValue {
-  /** Organização actual do utilizador (null se não tiver) */
+  /** Todas as organizações do utilizador */
+  memberships: MembershipWithOrg[];
+  /** Organização activa (null se não tiver nenhuma) */
   organization: Organization | null;
-  /** Role do utilizador na organização */
+  /** Role do utilizador na organização activa */
   role: OrgRole | null;
-  /** Lista de membros da organização */
+  /** Lista de membros da organização activa */
   members: OrgMemberWithProfile[];
   /** Se está a carregar os dados da org */
   loading: boolean;
@@ -31,8 +40,10 @@ interface OrganizationContextValue {
   refresh: () => Promise<void>;
   /** Verificar se o utilizador tem role mínimo (owner > admin > member > viewer) */
   hasRoleMin: (minRole: OrgRole) => boolean;
-  /** Se a organização tem mais de 1 membro */
+  /** Se a organização activa tem mais de 1 membro */
   isMultiMember: boolean;
+  /** Trocar organização activa */
+  setActiveOrganization: (orgId: string) => void;
 }
 
 const ROLE_HIERARCHY: Record<OrgRole, number> = {
@@ -42,16 +53,49 @@ const ROLE_HIERARCHY: Record<OrgRole, number> = {
   viewer: 3,
 };
 
+const ACTIVE_ORG_KEY = 'propostaja_active_org';
+
+function getStoredActiveOrg(userId: string): string | null {
+  try {
+    return localStorage.getItem(`${ACTIVE_ORG_KEY}_${userId}`);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredActiveOrg(userId: string, orgId: string | null) {
+  try {
+    if (orgId) {
+      localStorage.setItem(`${ACTIVE_ORG_KEY}_${userId}`, orgId);
+    } else {
+      localStorage.removeItem(`${ACTIVE_ORG_KEY}_${userId}`);
+    }
+  } catch {
+    // localStorage unavailable
+  }
+}
+
 export function useOrganization(userId: string | undefined): OrganizationContextValue {
-  const [organization, setOrganization] = useState<Organization | null>(null);
-  const [role, setRole] = useState<OrgRole | null>(null);
+  const [memberships, setMemberships] = useState<MembershipWithOrg[]>([]);
+  const [activeOrgId, setActiveOrgIdState] = useState<string | null>(null);
   const [members, setMembers] = useState<OrgMemberWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const initialLoadDone = useRef(false);
+
+  // Derive active org from memberships
+  const activeMembership = memberships.find(m => m.organization_id === activeOrgId) ?? memberships[0] ?? null;
+  const organization = activeMembership?.organization ?? null;
+  const role = activeMembership?.role ?? null;
+
+  const setActiveOrganization = useCallback((orgId: string) => {
+    if (userId) setStoredActiveOrg(userId, orgId);
+    setActiveOrgIdState(orgId);
+  }, [userId]);
 
   const fetchOrgData = useCallback(async () => {
     if (!userId) {
-      setOrganization(null);
-      setRole(null);
+      setMemberships([]);
+      setActiveOrgIdState(null);
       setMembers([]);
       setLoading(false);
       return;
@@ -60,49 +104,77 @@ export function useOrganization(userId: string | undefined): OrganizationContext
     setLoading(true);
 
     try {
-      // 1. Buscar membership do utilizador
-      // O join "organization:organizations(*)" FUNCIONA porque
-      // o FK organization_id aponta diretamente para organizations(id).
-      const { data: membership, error: memberError } = await supabase
+      // 1. Buscar TODAS as memberships do utilizador
+      const { data: allMemberships, error: memberError } = await supabase
         .from('organization_members')
         .select('organization_id, role, organization:organizations(*)')
-        .eq('user_id', userId)
-        .maybeSingle();
+        .eq('user_id', userId);
 
       if (memberError) {
-        console.error('Erro ao buscar organizacao:', memberError);
-        setOrganization(null);
-        setRole(null);
+        console.error('Erro ao buscar organizacoes:', memberError);
+        setMemberships([]);
+        setActiveOrgIdState(null);
         setMembers([]);
         setLoading(false);
         return;
       }
 
-      if (!membership?.organization_id) {
-        setOrganization(null);
-        setRole(null);
+      const ms = (allMemberships || []) as any[];
+      const parsed: MembershipWithOrg[] = ms.map((m: any) => ({
+        organization_id: m.organization_id,
+        role: m.role as OrgRole,
+        organization: m.organization as unknown as Organization,
+      }));
+      setMemberships(parsed);
+
+      // 2. Determinar org activa
+      if (parsed.length === 0) {
+        setActiveOrgIdState(null);
         setMembers([]);
         setLoading(false);
         return;
       }
 
-      // 2. Extrair org e role
-      const orgData = membership.organization as unknown as Organization;
-      setOrganization(orgData);
-      setRole(membership.role);
+      let targetOrgId: string | null = null;
 
-      // 3. Buscar todos os membros (sem join — FK user_id -> auth.users, nao profiles)
+      if (!initialLoadDone.current) {
+        // First load: try stored preference, then profile, then first
+        const stored = getStoredActiveOrg(userId);
+        if (stored && parsed.some(m => m.organization_id === stored)) {
+          targetOrgId = stored;
+        } else {
+          // Fall back to profiles.organization_id (set on signup / first accept)
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('organization_id')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (profile?.organization_id && parsed.some(m => m.organization_id === profile.organization_id)) {
+            targetOrgId = profile.organization_id;
+          }
+        }
+        if (!targetOrgId) {
+          targetOrgId = parsed[0].organization_id;
+        }
+        setActiveOrgIdState(targetOrgId);
+        initialLoadDone.current = true;
+      } else {
+        // Subsequent loads: keep current activeOrgId if still valid
+        targetOrgId = activeOrgId && parsed.some(m => m.organization_id === activeOrgId)
+          ? activeOrgId
+          : parsed[0].organization_id;
+      }
+
+      // 3. Buscar membros da org activa
       const { data: memberList, error: listError } = await supabase
         .from('organization_members')
         .select('*')
-        .eq('organization_id', membership.organization_id)
+        .eq('organization_id', targetOrgId)
         .order('joined_at', { ascending: true });
 
       if (!listError && memberList) {
         const rawMembers = memberList as any[];
-
-        // 4. Buscar profiles separadamente
-        // RLS profiles_select_org permite ler profiles da mesma org
         const userIds = rawMembers.map((m: any) => m.user_id);
         if (userIds.length > 0) {
           const { data: profiles } = await supabase
@@ -125,6 +197,8 @@ export function useOrganization(userId: string | undefined): OrganizationContext
             profileNome: profileMap.get(m.user_id)?.nome ?? null,
             profileEmail: profileMap.get(m.user_id)?.email ?? '',
           })));
+        } else {
+          setMembers([]);
         }
       }
     } catch (err) {
@@ -132,11 +206,58 @@ export function useOrganization(userId: string | undefined): OrganizationContext
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId]); // Intentionally exclude activeOrgId to avoid infinite loops
 
   useEffect(() => {
+    initialLoadDone.current = false;
     fetchOrgData();
   }, [fetchOrgData]);
+
+  // When activeOrgId changes (user switched), reload members
+  useEffect(() => {
+    if (!initialLoadDone.current || !activeOrgId || !userId) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const { data: memberList, error: listError } = await supabase
+        .from('organization_members')
+        .select('*')
+        .eq('organization_id', activeOrgId)
+        .order('joined_at', { ascending: true });
+
+      if (cancelled || listError || !memberList) return;
+
+      const rawMembers = memberList as any[];
+      const userIds = rawMembers.map((m: any) => m.user_id);
+      if (userIds.length === 0) { setMembers([]); return; }
+
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, nome, email')
+        .in('id', userIds);
+
+      if (cancelled) return;
+
+      const profileMap = new Map<string, { nome: string | null; email: string }>();
+      (profiles || []).forEach((p: any) => {
+        profileMap.set(p.id, { nome: p.nome, email: p.email || '' });
+      });
+
+      setMembers(rawMembers.map((m: any) => ({
+        id: m.id,
+        organization_id: m.organization_id,
+        user_id: m.user_id,
+        role: m.role,
+        joined_at: m.joined_at,
+        invited_by: m.invited_by,
+        profileNome: profileMap.get(m.user_id)?.nome ?? null,
+        profileEmail: profileMap.get(m.user_id)?.email ?? '',
+      })));
+    })();
+
+    return () => { cancelled = true; };
+  }, [activeOrgId, userId]);
 
   const hasRoleMin = useCallback(
     (minRole: OrgRole): boolean => {
@@ -147,6 +268,7 @@ export function useOrganization(userId: string | undefined): OrganizationContext
   );
 
   return {
+    memberships,
     organization,
     role,
     members,
@@ -154,5 +276,6 @@ export function useOrganization(userId: string | undefined): OrganizationContext
     refresh: fetchOrgData,
     hasRoleMin,
     isMultiMember: members.length > 1,
+    setActiveOrganization,
   };
 }

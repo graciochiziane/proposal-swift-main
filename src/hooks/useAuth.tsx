@@ -2,23 +2,32 @@ import { createContext, useContext, useEffect, useState, useCallback, ReactNode 
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { posthog } from 'posthog-js';
-import { useOrganization, type OrgRole, type Organization } from './useOrganization';
+import {
+  useOrganization,
+  type OrgRole,
+  type Organization,
+  type MembershipWithOrg,
+} from './useOrganization';
 
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  /** Organização actual do utilizador (null se não tiver) */
+  /** Todas as organizações do utilizador */
+  memberships: MembershipWithOrg[];
+  /** Organização activa (null se não tiver nenhuma) */
   organization: Organization | null;
-  /** Role do utilizador na organização (null se não tiver org) */
+  /** Role na organização activa */
   orgRole: OrgRole | null;
   /** Se os dados da org estão a carregar */
   orgLoading: boolean;
   /** Refrescar dados da organização */
   refreshOrg: () => Promise<void>;
-  /** Verificar se o utilizador tem role mínimo na org */
+  /** Verificar se o utilizador tem role mínimo na org activa */
   hasOrgRoleMin: (minRole: OrgRole) => boolean;
+  /** Trocar organização activa */
+  setActiveOrganization: (orgId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -26,11 +35,13 @@ const AuthContext = createContext<AuthContextValue>({
   session: null,
   loading: true,
   signOut: async () => {},
+  memberships: [],
   organization: null,
   orgRole: null,
   orgLoading: true,
   refreshOrg: async () => {},
   hasOrgRoleMin: () => false,
+  setActiveOrganization: () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -39,11 +50,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const {
+    memberships,
     organization,
     role,
     loading: orgLoading,
     refresh,
     hasRoleMin,
+    setActiveOrganization,
   } = useOrganization(user?.id);
 
   useEffect(() => {
@@ -92,11 +105,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       loading: combinedLoading,
       signOut,
+      memberships,
       organization,
       orgRole: role,
       orgLoading,
       refreshOrg: refresh,
       hasOrgRoleMin: hasRoleMin,
+      setActiveOrganization,
     }}>
       {children}
     </AuthContext.Provider>

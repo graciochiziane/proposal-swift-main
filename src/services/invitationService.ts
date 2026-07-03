@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { OrgRole } from '@/hooks/useOrganization';
+import { OrganizationService } from '@/services/organizationService';
 
 // ── Types ──
 export interface Invitation {
@@ -101,14 +102,10 @@ export const InvitationService = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Nao autenticado');
 
-    const { data: membership } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    const orgId = await OrganizationService._getMyOrgId();
 
-    if (!membership?.organization_id) {
-      throw new Error('Nao tem organizacao');
+    if (!orgId) {
+      throw new Error('Nenhuma organizacao seleccionada');
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -124,7 +121,7 @@ export const InvitationService = {
       const { data: existingMember } = await supabase
         .from('organization_members')
         .select('id')
-        .eq('organization_id', membership.organization_id)
+        .eq('organization_id', orgId)
         .eq('user_id', existingUser.id)
         .maybeSingle();
 
@@ -137,7 +134,7 @@ export const InvitationService = {
     const { data: pendingInvite } = await supabase
       .from('organization_invitations')
       .select('id')
-      .eq('organization_id', membership.organization_id)
+      .eq('organization_id', orgId)
       .eq('email', normalizedEmail)
       .is('accepted_at', null)
       .gte('expires_at', new Date().toISOString())
@@ -150,7 +147,7 @@ export const InvitationService = {
     const { data, error } = await supabase
       .from('organization_invitations')
       .insert({
-        organization_id: membership.organization_id,
+        organization_id: orgId,
         email: normalizedEmail,
         role,
         invited_by: user.id,
@@ -161,7 +158,7 @@ export const InvitationService = {
     if (error) throw error;
     if (!data) throw new Error('Falha ao criar convite');
 
-    this._sendInviteEmail(data.id, data.token, normalizedEmail, role, membership.organization_id).catch(
+    this._sendInviteEmail(data.id, data.token, normalizedEmail, role, orgId).catch(
       (emailErr) => console.warn('Convite criado mas email nao enviado:', emailErr)
     );
 
@@ -176,18 +173,13 @@ export const InvitationService = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
-    const { data: membership } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (!membership?.organization_id) return [];
+    const orgId = await OrganizationService._getMyOrgId();
+    if (!orgId) return [];
 
     const { data, error } = await supabase
       .from('organization_invitations')
       .select('*')
-      .eq('organization_id', membership.organization_id)
+      .eq('organization_id', orgId)
       .is('accepted_at', null)
       .gte('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false });

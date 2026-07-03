@@ -13,6 +13,7 @@ import {
   HelpCircle,
   LogOut,
   Building2,
+  Check,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -58,7 +59,7 @@ function planBadgeClasses(plano: string): string {
 }
 
 export default function UserProfile({ compact = false }: { compact?: boolean }) {
-  const { user, signOut, organization, orgRole } = useAuth();
+  const { user, signOut, organization, orgRole, memberships, setActiveOrganization } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -176,6 +177,34 @@ export default function UserProfile({ compact = false }: { compact?: boolean }) 
         </DropdownMenuLabel>
 
         <DropdownMenuSeparator />
+
+        {/* Org Switcher (multi-org) */}
+        {memberships.length > 1 && (
+          <>
+            <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+              Organizacoes
+            </DropdownMenuLabel>
+            {memberships.map((m) => (
+              <DropdownMenuItem
+                key={m.organization_id}
+                onClick={() => {
+                  setActiveOrganization(m.organization_id);
+                  toast.success(`Org activa: ${m.organization.nome}`);
+                }}
+                className={m.organization_id === organization?.id ? 'bg-accent/50' : ''}
+              >
+                <Building2 className="mr-2 h-4 w-4 shrink-0" />
+                <span className="truncate flex-1">{m.organization.nome}</span>
+                {m.organization_id === organization?.id && (
+                  <Check className="h-3.5 w-3.5 text-primary shrink-0" />
+                )}
+                <span className="text-[10px] text-muted-foreground ml-1">{m.role}</span>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+          </>
+        )}
+
         <DropdownMenuItem onClick={() => go('/organizacao')}>
           <Building2 className="mr-2 h-4 w-4" />
           Organizacao

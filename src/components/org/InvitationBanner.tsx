@@ -28,25 +28,18 @@ export default function InvitationBanner() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const acceptingRef = useRef(false);
 
-  // Se existe token no sessionStorage (user veio de link de email apos login),
-  // redirecionar para a pagina de aceitacao
+  // Se já tem org, redirecionar para aceitar (multi-org permite aceitar mesmo com org)
   useEffect(() => {
     const pendingToken = sessionStorage.getItem('invite_token');
-    if (pendingToken && !organization) {
+    if (pendingToken) {
       sessionStorage.removeItem('invite_token');
       navigate(`/invite/accept?token=${pendingToken}`, { replace: true });
       return;
     }
-  }, [organization, navigate]);
+  }, [navigate]);
 
   const fetchInvitations = useCallback(async () => {
-    // Se já tem organização, não precisa de ver convites
-    if (organization) {
-      setInvitations([]);
-      setFetchState('success');
-      return;
-    }
-
+    // Buscar convites dirigidos ao user (multi-org: sempre mostrar, mesmo com org)
     setFetchState('loading');
     try {
       const data = await InvitationService.getMyPendingInvitations();
@@ -56,7 +49,7 @@ export default function InvitationBanner() {
       console.error('Erro ao buscar convites pendentes:', err);
       setFetchState('error');
     }
-  }, [organization]);
+  }, []);
 
   useEffect(() => {
     fetchInvitations();
@@ -97,12 +90,16 @@ export default function InvitationBanner() {
   // Empty: renderizar nada
   if (invitations.length === 0) return null;
 
-  // Se já aceitou e agora tem org, não mostrar
-  if (organization) return null;
+  // Multi-org: so esconder convites para orgs ja aceites (a org activa)
+  // O user pode ter convites para OUTRAS orgs que ainda nao aceitou
+  const visibleInvitations = organization
+    ? invitations.filter(inv => inv.organization_id !== organization.id)
+    : invitations;
+  if (visibleInvitations.length === 0) return null;
 
   return (
     <div className="space-y-3 mb-6">
-      {invitations.map((inv) => {
+      {visibleInvitations.map((inv) => {
         // O join organizations(nome) devolve o campo dentro do objeto
         const orgName = inv.orgNome || 'Organização';
         const isAccepting = acceptingId === inv.id;
