@@ -14,6 +14,7 @@ export interface OrgMemberWithProfile {
   role: OrgRole;
   joined_at: string;
   invited_by: string | null;
+  display_name: string;
   profileNome: string | null;
   profileEmail: string;
 }
@@ -194,6 +195,7 @@ export function useOrganization(userId: string | undefined): OrganizationContext
             role: m.role,
             joined_at: m.joined_at,
             invited_by: m.invited_by,
+            display_name: m.display_name || '',
             profileNome: profileMap.get(m.user_id)?.nome ?? null,
             profileEmail: profileMap.get(m.user_id)?.email ?? '',
           })));
@@ -251,6 +253,7 @@ export function useOrganization(userId: string | undefined): OrganizationContext
         role: m.role,
         joined_at: m.joined_at,
         invited_by: m.invited_by,
+        display_name: m.display_name || '',
         profileNome: profileMap.get(m.user_id)?.nome ?? null,
         profileEmail: profileMap.get(m.user_id)?.email ?? '',
       })));

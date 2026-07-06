@@ -7,6 +7,7 @@ export interface Invitation {
   id: string;
   organization_id: string;
   email: string;
+  nome: string;
   role: OrgRole;
   token: string;
   invited_by: string;
@@ -98,7 +99,7 @@ export const InvitationService = {
    * Cria um convite para um email.
    * Requer owner ou admin na organizacao.
    */
-  async create(email: string, role: OrgRole): Promise<Invitation> {
+  async create(email: string, role: OrgRole, nome?: string): Promise<Invitation> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Nao autenticado');
 
@@ -149,6 +150,7 @@ export const InvitationService = {
       .insert({
         organization_id: orgId,
         email: normalizedEmail,
+        nome: nome || '',
         role,
         invited_by: user.id,
       })
@@ -162,7 +164,7 @@ export const InvitationService = {
       (emailErr) => console.warn('Convite criado mas email nao enviado:', emailErr)
     );
 
-    return { ...data, inviterNome: null } as unknown as Invitation;
+    return { ...data, inviterNome: null, nome: nome || '' } as unknown as Invitation;
   },
 
   /**

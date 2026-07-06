@@ -25,6 +25,7 @@ import type { OrgRole } from '@/hooks/useOrganization';
 
 export default function InviteModal({ onInvited }: { onInvited?: () => void }) {
   const [open, setOpen] = useState(false);
+  const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<OrgRole>('member');
   const [loading, setLoading] = useState(false);
@@ -41,8 +42,9 @@ export default function InviteModal({ onInvited }: { onInvited?: () => void }) {
 
     setLoading(true);
     try {
-      await InvitationService.create(email.trim(), role);
+      await InvitationService.create(email.trim(), role, nome.trim());
       toast.success(`Convite enviado para ${email.trim()}`);
+      setNome('');
       setEmail('');
       setRole('member');
       setOpen(false);
@@ -71,6 +73,17 @@ export default function InviteModal({ onInvited }: { onInvited?: () => void }) {
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="invite-nome">Nome <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+            <Input
+              id="invite-nome"
+              type="text"
+              placeholder="Nome do convidado"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+            />
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="invite-email">Email</Label>
             <Input

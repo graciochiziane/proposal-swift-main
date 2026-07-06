@@ -13,6 +13,7 @@ export interface MemberWithProfile {
   role: string;
   joined_at: string;
   invited_by: string | null;
+  display_name: string;
   profileNome: string | null;
   profileEmail: string;
 }
@@ -68,6 +69,7 @@ export const MemberService = {
       role: m.role,
       joined_at: m.joined_at,
       invited_by: m.invited_by,
+      display_name: m.display_name || '',
       profileNome: profileMap.get(m.user_id)?.nome ?? null,
       profileEmail: profileMap.get(m.user_id)?.email ?? '',
     }));
@@ -126,6 +128,19 @@ export const MemberService = {
     const { error } = await supabase
       .from('organization_members')
       .delete()
+      .eq('id', memberId);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Actualiza o display_name de um membro.
+   * Requer owner ou admin.
+   */
+  async updateDisplayName(memberId: string, displayName: string): Promise<void> {
+    const { error } = await supabase
+      .from('organization_members')
+      .update({ display_name: displayName.trim() })
       .eq('id', memberId);
 
     if (error) throw error;

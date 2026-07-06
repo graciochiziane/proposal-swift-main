@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Trash2, MoreHorizontal, Shield, RefreshCw } from 'lucide-react';
+import { Trash2, MoreHorizontal, Shield, RefreshCw, Pencil } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { MemberService } from '@/services/memberService';
 import { InvitationService } from '@/services/invitationService';
@@ -10,6 +10,8 @@ import RoleBadge from './RoleBadge';
 import InviteModal from './InviteModal';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +29,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
@@ -38,6 +48,10 @@ function getInitials(name: string | null, email: string): string {
   return source.slice(0, 2).toUpperCase();
 }
 
+function getMemberName(m: MemberWithProfile): string {
+  return m.display_name || m.profileNome || 'Sem nome';
+}
+
 export default function MemberList() {
   const { user, orgRole, hasOrgRoleMin, refreshOrg } = useAuth();
   const [members, setMembers] = useState<MemberWithProfile[]>([]);
@@ -45,6 +59,11 @@ export default function MemberList() {
   const [loading, setLoading] = useState(true);
   const [removeTarget, setRemoveTarget] = useState<MemberWithProfile | null>(null);
   const [transferTarget, setTransferTarget] = useState<MemberWithProfile | null>(null);
+
+  // Edit name dialog state
+  const [editNameTarget, setEditNameTarget] = useState<MemberWithProfile | null>(null);
+  const [editNameValue, setEditNameValue] = useState('');
+  const [editNameSaving, setEditNameSaving] = useState(false);
 
   const canManage = hasOrgRoleMin('admin');
 
@@ -81,7 +100,7 @@ export default function MemberList() {
     if (!removeTarget) return;
     try {
       await MemberService.removeMember(removeTarget.id);
-      toast.success(`${removeTarget.profileNome || 'Membro'} removido`);
+      toast.success(`${getMemberName(removeTarget)} removido`);
       setRemoveTarget(null);
       fetchData();
       refreshOrg();
@@ -114,12 +133,32 @@ export default function MemberList() {
     if (!transferTarget) return;
     try {
       await MemberService.transferOwnership(transferTarget.id);
-      toast.success(`Ownership transferido para ${transferTarget.profileNome || 'membro'}`);
+      toast.success(`Ownership transferido para ${getMemberName(transferTarget)}`);
       setTransferTarget(null);
       fetchData();
       refreshOrg();
     } catch (err: any) {
       toast.error(err.message || 'Erro ao transferir ownership');
+    }
+  };
+
+  const openEditName = (member: MemberWithProfile) => {
+    setEditNameTarget(member);
+    setEditNameValue(member.display_name || member.profileNome || '');
+  };
+
+  const handleSaveName = async () => {
+    if (!editNameTarget) return;
+    setEditNameSaving(true);
+    try {
+      await MemberService.updateDisplayName(editNameTarget.id, editNameValue);
+      toast.success('Nome actualizado');
+      setEditNameTarget(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao actualizar nome');
+    } finally {
+      setEditNameSaving(false);
     }
   };
 
@@ -148,20 +187,21 @@ export default function MemberList() {
           {members.map((member, i) => {
             const isSelf = member.user_id === user?.id;
             const isOwner = member.role === 'owner';
+            const displayName = getMemberName(member);
 
             return (
               <div key={member.id}>
                 <div className="flex items-center gap-4 px-4 py-3">
                   <Avatar className="h-9 w-9 shrink-0">
                     <AvatarFallback className="bg-primary/15 text-primary text-sm font-semibold">
-                      {getInitials(member.profileNome, member.profileEmail)}
+                      {getInitials(displayName, member.profileEmail)}
                     </AvatarFallback>
                   </Avatar>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium truncate">
-                        {member.profileNome || 'Sem nome'}
+                        {displayName}
                       </span>
                       {isSelf && (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">voce</Badge>
@@ -178,6 +218,11 @@ export default function MemberList() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditName(member)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Editar Nome
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium">Alterar Role</div>
                         {(['admin', 'member', 'viewer'] as OrgRole[]).map((r) => (
                           <DropdownMenuItem
@@ -226,7 +271,10 @@ export default function MemberList() {
                 <div key={inv.id}>
                   <div className="flex items-center justify-between px-4 py-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{inv.email}</p>
+                      <p className="text-sm font-medium truncate">{inv.nome || inv.email}</p>
+                      {inv.nome && inv.nome !== inv.email && (
+                        <p className="text-xs text-muted-foreground truncate">{inv.email}</p>
+                      )}
                       <div className="flex items-center gap-2 mt-0.5">
                         <RoleBadge role={inv.role} />
                         <span className="text-[11px] text-muted-foreground">
@@ -267,7 +315,7 @@ export default function MemberList() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remover Membro</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem a certeza que deseja remover <strong>{removeTarget?.profileNome || 'este membro'}</strong>?
+              Tem a certeza que deseja remover <strong>{removeTarget ? getMemberName(removeTarget) : 'este membro'}</strong>?
               O utilizador perdera acesso a todos os dados da organizacao.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -286,7 +334,7 @@ export default function MemberList() {
           <AlertDialogHeader>
             <AlertDialogTitle>Transferir Ownership</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem a certeza que deseja transferir a propriedade para <strong>{transferTarget?.profileNome || 'este membro'}</strong>?
+              Tem a certeza que deseja transferir a propriedade para <strong>{transferTarget ? getMemberName(transferTarget) : 'este membro'}</strong>?
               Voce passara a ser Admin. Esta accao nao pode ser desfeita pelo novo owner.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -298,6 +346,42 @@ export default function MemberList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Edit name dialog */}
+      <Dialog open={!!editNameTarget} onOpenChange={(open) => !open && setEditNameTarget(null)}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Editar Nome</DialogTitle>
+            <DialogDescription>
+              Altere o nome de exibicao de <strong>{editNameTarget ? getMemberName(editNameTarget) : ''}</strong>
+              {editNameTarget?.profileEmail && (
+                <span className="block text-xs text-muted-foreground mt-1">{editNameTarget.profileEmail}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2">
+            <Label htmlFor="edit-display-name">Nome de Exibicao</Label>
+            <Input
+              id="edit-display-name"
+              value={editNameValue}
+              onChange={(e) => setEditNameValue(e.target.value)}
+              placeholder="Nome do membro"
+              onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+              autoFocus
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditNameTarget(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveName} disabled={editNameSaving || !editNameValue.trim()}>
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
