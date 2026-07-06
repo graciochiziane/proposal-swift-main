@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { OrganizationService } from '@/services/organizationService';
@@ -39,11 +39,13 @@ export default function Organizacao() {
     }
   };
 
-  // Sync state when organization loads/refreshes
-  if (organization && nome !== organization.nome) {
-    setNome(organization.nome);
-    setCorPrimaria(organization.cor_primaria || '#0B5394');
-  }
+  // Sync form state when organization data changes from server (e.g. after refresh)
+  useEffect(() => {
+    if (organization) {
+      setNome(organization.nome || '');
+      setCorPrimaria(organization.cor_primaria || '#0B5394');
+    }
+  }, [organization]);
 
   if (!organization) {
     return (
