@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { queryClient } from '@/App';
 import type { Tables, Enums } from '@/integrations/supabase/types';
 
 // Re-exportar tipo de role para uso nos componentes
@@ -91,6 +92,8 @@ export function useOrganization(userId: string | undefined): OrganizationContext
   const setActiveOrganization = useCallback((orgId: string) => {
     if (userId) setStoredActiveOrg(userId, orgId);
     setActiveOrgIdState(orgId);
+    // Clear React Query cache to prevent stale data from previous org
+    queryClient.clear();
   }, [userId]);
 
   const fetchOrgData = useCallback(async () => {
