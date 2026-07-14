@@ -75,6 +75,9 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+
+    // Client com JWT do utilizador — RLS org-scoped aplica-se automaticamente
+    const supabaseUser = createClient(supabaseUrl, token);
     if (authErr || !user) {
       console.error("[STEP-FAIL] AUTH:", authErr?.message || "user null");
       return new Response(
@@ -118,9 +121,9 @@ Deno.serve(async (req) => {
     }
     console.log(`[STEP-OK] PARSE: cotacaoId=${cotacaoId}, model=${model}, mode=${mode}, tone=${tone}`);
 
-    // ---- STEP 3: Load cotation data ----
+    // ---- STEP 3: Load cotation data (RLS org-scoped via supabaseUser) ----
     logContext = "DB_LOAD";
-    const { data: proposta, error: propError } = await supabase
+    const { data: proposta, error: propError } = await supabaseUser
       .from("proposals")
       .select(
         `
@@ -129,7 +132,6 @@ Deno.serve(async (req) => {
       `
       )
       .eq("id", cotacaoId)
-      .eq("owner_id", user.id)
       .single();
 
     if (propError || !proposta) {
@@ -215,6 +217,11 @@ ${sections.map((s) => `    "${s}": "..."`).join(",\n")},
   }
 }
 GERE APENAS as seccoes listadas acima. NAO adicione seccoes extra.`;
+
+    // Construir descricao das seccoes preenchidas pelo utilizador
+    const sectionDescriptions = sections
+      .map((s) => `- ${s}: ${fields[s] || "(nao preenchido)"}`)
+      .join("\n");
 
     const userPrompt = `CRIACAO DE PROPOSTA COMERCIAL
 
@@ -430,16 +437,20 @@ Gere a proposta seguindo as seccoes especificadas.`;
       parsedSections.investimento = investimentoSection;
     }
 
-    // ---- STEP 9: Save to DB ----
+    // ---- STEP 9: Save to DB (via supabaseUser para RLS) ----
     logContext = "DB_SAVE";
     const usageMeta = geminiData.usageMetadata || {};
     const totalTokens = usageMeta.totalTokenCount || 0;
 
-    const { data: saved, error: saveError } = await supabase
+    // Buscar organization_id da proposta para preencher na proposta_ai
+    const orgId = proposta.organization_id || null;
+
+    const { data: saved, error: saveError } = await supabaseUser
       .from("proposta_ai")
       .insert({
         cotacao_id: cotacaoId,
         user_id: user.id,
+        organization_id: orgId,
         referencia: proposta.numero,
         mode,
         tone,
@@ -448,7 +459,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
         output_json: parsedSections,
         modelo: model,
         tokens_usados: totalTokens,
-        custo_usd: 0, // Gemini 2.0 Flash is free within usage limits
+        custo_usd: 0,
         gerado_em: new Date().toISOString(),
       })
       .select("id, referencia, created_at")
