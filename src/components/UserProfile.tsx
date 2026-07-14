@@ -10,11 +10,13 @@ import {
   CreditCard,
   ShieldCheck,
   Moon,
+  Sun,
   HelpCircle,
   LogOut,
   Building2,
   Check,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +25,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
+function ThemeToggle() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+
+  const toggle = () => setTheme(isDark ? 'light' : 'dark');
+
+  return (
+    <DropdownMenuItem onClick={toggle}>
+      {isDark ? (
+        <Sun className="mr-2 h-4 w-4" />
+      ) : (
+        <Moon className="mr-2 h-4 w-4" />
+      )}
+      {isDark ? 'Tema Claro' : 'Tema Escuro'}
+    </DropdownMenuItem>
+  );
+}
 
 interface ProfileData {
   nome: string | null;
@@ -240,10 +260,7 @@ export default function UserProfile({ compact = false }: { compact?: boolean }) 
         <DropdownMenuSeparator />
 
         {/* Preferências */}
-        <DropdownMenuItem onClick={() => soon('Tema')}>
-          <Moon className="mr-2 h-4 w-4" />
-          Tema (claro/escuro)
-        </DropdownMenuItem>
+        <ThemeToggle />
         <DropdownMenuItem onClick={() => soon('Ajuda & Suporte')}>
           <HelpCircle className="mr-2 h-4 w-4" />
           Ajuda & Suporte
