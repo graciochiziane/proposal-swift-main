@@ -105,15 +105,15 @@ export function seccoesToNarrative(
   includedSections?: Record<string, boolean>,
 ): NarrativeSection[] {
   const defaultLabels: Record<string, string> = {
-    contexto: '1. Contexto do Cliente',
-    problema: '2. Problema Identificado',
-    solucao: '3. Solucao Proposta',
-    beneficios: '4. Beneficios Esperados',
-    impacto: '5. Impacto Quantificavel',
-    escopo: '6. Escopo Detalhado',
-    cronograma: '7. Cronograma',
-    condicoes: '8. Condicoes Especiais',
-    investimento: '9. Resumo de Investimento',
+    contexto: 'Contexto do Cliente',
+    problema: 'Problema Identificado',
+    solucao: 'Solucao Proposta',
+    beneficios: 'Beneficios Esperados',
+    impacto: 'Impacto Quantificavel',
+    escopo: 'Escopo Detalhado',
+    cronograma: 'Cronograma',
+    condicoes: 'Condicoes Especiais',
+    investimento: 'Resumo de Investimento',
   };
 
   const sectionLabels = labels ?? defaultLabels;
