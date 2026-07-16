@@ -12,18 +12,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Helper: retorna 200 com { error, step } para que o frontend receba os detalhes
-// (Supabase functions.invoke perde o body em respostas non-2xx)
-function errorResponse(message: string, step: string, extra?: Record<string, unknown>) {
-  return new Response(
-    JSON.stringify({ error: message, step, ...extra }),
-    {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    }
-  );
-}
-
 // Mapa de tom para instrucao de estilo
 const TONE_INSTRUCTIONS: Record<string, string> = {
   formal: `
@@ -83,18 +71,10 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-
-    // Cliente com JWT do utilizador para respeitar RLS (acesso org-scoped)
-    // Usa anon key como API key (2º param) + override do Authorization com o JWT do user
-    // Pattern oficial: https://supabase.com/docs/guides/functions/auth#using-the-logged-in-users-jwt
-    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
     if (authErr || !user) {
       console.error("[STEP-FAIL] AUTH:", authErr?.message || "user null");
       return new Response(
@@ -113,9 +93,14 @@ Deno.serve(async (req) => {
     try {
       body = await req.json();
     } catch (parseErr) {
-      const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-      console.error("[STEP-FAIL] PARSE: body invalido", parseMsg);
-      return errorResponse("Corpo da requisicao invalido: " + parseMsg, "parse");
+      console.error("[STEP-FAIL] PARSE: body invalido", parseErr);
+      return new Response(
+        JSON.stringify({ error: "Corpo da requisicao invalido", step: "parse" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const { cotacaoId, fields, tone = "formal", mode = "rapido", sector, model: bodyModel } = body;
@@ -123,13 +108,19 @@ Deno.serve(async (req) => {
 
     if (!cotacaoId || !fields) {
       console.error("[STEP-FAIL] PARSE: cotacaoId ou fields em falta", { cotacaoId, hasFields: !!fields });
-      return errorResponse("cotacaoId e fields sao obrigatorios (cotacaoId=" + (cotacaoId || "null") + ", hasFields=" + !!fields + ")", "parse");
+      return new Response(
+        JSON.stringify({ error: "cotacaoId e fields sao obrigatorios", step: "parse" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
     console.log(`[STEP-OK] PARSE: cotacaoId=${cotacaoId}, model=${model}, mode=${mode}, tone=${tone}`);
 
-    // ---- STEP 3: Load cotation data (RLS org-scoped via supabaseUser) ----
+    // ---- STEP 3: Load cotation data ----
     logContext = "DB_LOAD";
-    const { data: proposta, error: propError } = await supabaseUser
+    const { data: proposta, error: propError } = await supabase
       .from("proposals")
       .select(
         `
@@ -138,11 +129,18 @@ Deno.serve(async (req) => {
       `
       )
       .eq("id", cotacaoId)
+      .eq("owner_id", user.id)
       .single();
 
     if (propError || !proposta) {
       console.error("[STEP-FAIL] DB_LOAD:", propError?.message || "proposta null");
-      return errorResponse("Cotacao nao encontrada: " + (propError?.message || "sem resultados para cotacaoId=" + cotacaoId), "db_load");
+      return new Response(
+        JSON.stringify({ error: "Cotacao nao encontrada", step: "db_load" }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
     console.log(`[STEP-OK] DB_LOAD: proposta=${proposta.numero}, items=${proposta.proposal_items?.length || 0}, elapsed=${Date.now() - startTime}ms`);
 
@@ -218,11 +216,6 @@ ${sections.map((s) => `    "${s}": "..."`).join(",\n")},
 }
 GERE APENAS as seccoes listadas acima. NAO adicione seccoes extra.`;
 
-    // Construir descricao das seccoes preenchidas pelo utilizador
-    const sectionDescriptions = sections
-      .map((s) => `- ${s}: ${fields[s] || "(nao preenchido)"}`)
-      .join("\n");
-
     const userPrompt = `CRIACAO DE PROPOSTA COMERCIAL
 
 INFORMACAO DO CLIENTE:
@@ -241,7 +234,7 @@ ${itemsList}
 ${proposta.observacoes ? `- Observacoes: ${proposta.observacoes}` : ""}
 
 CONTEUDO FORNECIDO PELO UTILIZADOR:
-${sectionDescriptions}
+${sectionDescriptions || "(Nenhum campo adicional preenchido - gere tudo com base nos dados acima)"}
 
 Gere a proposta seguindo as seccoes especificadas.`;
 
@@ -252,7 +245,13 @@ Gere a proposta seguindo as seccoes especificadas.`;
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
       console.error("[STEP-FAIL] GEMINI_CALL: GEMINI_API_KEY nao configurada");
-      return errorResponse("GEMINI_API_KEY nao configurada no Supabase", "gemini_call");
+      return new Response(
+        JSON.stringify({ error: "GEMINI_API_KEY nao configurada no Supabase", step: "gemini_call" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
@@ -283,7 +282,13 @@ Gere a proposta seguindo as seccoes especificadas.`;
     } catch (fetchErr) {
       const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       console.error("[STEP-FAIL] GEMINI_CALL: fetch exception:", fetchMsg);
-      return errorResponse("Falha ao conectar com a API Gemini: " + fetchMsg, "gemini_call");
+      return new Response(
+        JSON.stringify({ error: `Falha ao conectar com a API Gemini: ${fetchMsg}`, step: "gemini_call" }),
+        {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     console.log(`[STEP] GEMINI_CALL: HTTP status=${geminiResponse.status}, elapsed=${Date.now() - startTime}ms`);
@@ -299,7 +304,17 @@ Gere a proposta seguindo as seccoes especificadas.`;
         status: geminiResponse.status,
         body: errBody.substring(0, 500),
       });
-      return errorResponse("Erro na API Gemini (HTTP " + geminiResponse.status + "): " + errBody.substring(0, 300), "gemini_call");
+      return new Response(
+        JSON.stringify({
+          error: `Erro na API Gemini: ${geminiResponse.status}`,
+          detail: errBody.substring(0, 300),
+          step: "gemini_call",
+        }),
+        {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     // ---- STEP 6: Parse Gemini response ----
@@ -415,20 +430,16 @@ Gere a proposta seguindo as seccoes especificadas.`;
       parsedSections.investimento = investimentoSection;
     }
 
-    // ---- STEP 9: Save to DB (via supabaseUser para RLS) ----
+    // ---- STEP 9: Save to DB ----
     logContext = "DB_SAVE";
     const usageMeta = geminiData.usageMetadata || {};
     const totalTokens = usageMeta.totalTokenCount || 0;
 
-    // Buscar organization_id da proposta para preencher na proposta_ai
-    const orgId = proposta.organization_id || null;
-
-    const { data: saved, error: saveError } = await supabaseUser
+    const { data: saved, error: saveError } = await supabase
       .from("proposta_ai")
       .insert({
         cotacao_id: cotacaoId,
         user_id: user.id,
-        organization_id: orgId,
         referencia: proposta.numero,
         mode,
         tone,
@@ -437,7 +448,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
         output_json: parsedSections,
         modelo: model,
         tokens_usados: totalTokens,
-        custo_usd: 0,
+        custo_usd: 0, // Gemini 2.0 Flash is free within usage limits
         gerado_em: new Date().toISOString(),
       })
       .select("id, referencia, created_at")
@@ -472,6 +483,17 @@ Gere a proposta seguindo as seccoes especificadas.`;
     const errStack = err instanceof Error ? err.stack || "" : "";
     console.error(`[FATAL] logContext=${logContext}`, errMsg);
     console.error(`[FATAL] stack:`, errStack);
-    return errorResponse("Erro interno do servidor: " + errMsg, logContext, { detail: errMsg, stack: errStack.split("\n").slice(0, 5).join(" | ") });
+    return new Response(
+      JSON.stringify({
+        error: "Erro interno do servidor",
+        detail: errMsg,
+        step: logContext,
+        stack: errStack.split("\n").slice(0, 5).join(" | "),
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });
