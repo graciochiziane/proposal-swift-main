@@ -12,7 +12,8 @@ dist
 dist-ssr
 *.local
 
-# Environment profiles (contain API keys)
+# Environment files (contain API keys and secrets)
+.env
 .env.staging
 .env.production
 
@@ -26,3 +27,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Sandbox artifacts
+repo-checkout/
+proposal-swift-main/
+tool-results/
+skills/
+AGENT_GUIDELINES.md
+playwright-fixture.ts
+bun.lockb
