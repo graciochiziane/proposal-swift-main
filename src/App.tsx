@@ -22,6 +22,7 @@ import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "./pages/NotFound.tsx";
 import AcceptInvite from "@/pages/AcceptInvite";
+import TenantDetailPage from "@/pages/TenantDetailPage";
 
 export const queryClient = new QueryClient();
 
@@ -57,6 +58,7 @@ const App = () => (
                       <Route path="/proposta/:id/gerar-ia" element={<GerarPropostaIA />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/organizacao" element={<Organizacao />} />
+                      <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />
                       <Route path="/admin" element={<Admin />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
