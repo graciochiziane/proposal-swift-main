@@ -4,6 +4,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
@@ -11,8 +13,18 @@ Deno.serve(async (req) => {
 
   try {
     const { nome, email, plano, nuit, contact_email } = await req.json();
-    if (!nome || !email) {
-      return new Response(JSON.stringify({ error: "nome e email obrigatorios" }), { status: 400 });
+
+    // FIX 1.2: Validate inputs
+    if (!nome || typeof nome !== 'string' || nome.trim().length < 2) {
+      return new Response(JSON.stringify({ error: "nome obrigatório (mín. 2 caracteres)" }), { status: 400 });
+    }
+
+    if (!email || typeof email !== 'string' || !EMAIL_RE.test(email)) {
+      return new Response(JSON.stringify({ error: "email inválido" }), { status: 400 });
+    }
+
+    if (nuit && typeof nuit === 'string' && !/^\d+$/.test(nuit.trim())) {
+      return new Response(JSON.stringify({ error: "NUIT deve conter apenas dígitos" }), { status: 400 });
     }
 
     const authHeader = req.headers.get("Authorization");
@@ -33,14 +45,28 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Forbidden: admin only" }), { status: 403 });
     }
 
+    // FIX 1.2: Check if email already exists in auth
+    const { data: existingUsers } = await adminClient.auth.admin.listUsers({
+      perPage: 1,
+      page: 1,
+      filter: `email eq '${email.toLowerCase()}'`,
+    });
+    if (existingUsers && existingUsers.users && existingUsers.users.length > 0) {
+      return new Response(JSON.stringify({ error: "Este email já está registado" }), { status: 409 });
+    }
+
     // Create user via Auth Admin API
     const { data: newUser, error: authError } = await adminClient.auth.admin.createUser({
       email,
       email_confirm: true,
-      user_metadata: { empresa: nome },
+      user_metadata: { empresa: nome.trim() },
     });
+
+    // FIX 1.2: Handle known error codes
     if (authError || !newUser.user) {
-      return new Response(JSON.stringify({ error: authError?.message || "Failed to create user" }), { status: 500 });
+      const msg = authError?.message || "Failed to create user";
+      const status = msg.includes("already registered") || msg.includes("already exists") ? 409 : 500;
+      return new Response(JSON.stringify({ error: msg }), { status });
     }
 
     const newUserId = newUser.user.id;
@@ -49,7 +75,7 @@ Deno.serve(async (req) => {
     // Create org
     const { data: org, error: orgError } = await adminClient
       .from("organizations")
-      .insert({ nome, slug, plano: plano || "free", nuit: nuit || '', contact_email: contact_email || email })
+      .insert({ nome: nome.trim(), slug, plano: plano || "free", nuit: nuit?.trim() || '', contact_email: contact_email?.trim() || email })
       .select()
       .single();
     if (orgError || !org) {
@@ -74,7 +100,7 @@ Deno.serve(async (req) => {
       target_table: "organizations",
       target_id: org.id,
       target_owner_id: newUserId,
-      target_snapshot: { nome, email, plano, slug, nuit, contact_email },
+      target_snapshot: { nome: nome.trim(), email, plano, slug, nuit: nuit?.trim(), contact_email: contact_email?.trim() },
     });
 
     return new Response(JSON.stringify({ success: true, org_id: org.id, user_id: newUserId }), { status: 200 });

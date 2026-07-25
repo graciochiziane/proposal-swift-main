@@ -101,7 +101,7 @@ export const getProposalCounts = async (orgId: string): Promise<{ d30: number; d
 };
 
 // ---- Audit Log ----
-export const getAuditLog = async (filters?: { action?: string; dateFrom?: string; dateTo?: string }): Promise<AuditLogEntry[]> => {
+export const getAuditLog = async (filters?: { action?: string; dateFrom?: string; dateTo?: string; targetId?: string }): Promise<AuditLogEntry[]> => {
   let q = supabase
     .from('admin_audit_log')
     .select('*, profiles!inner(email)')
@@ -109,6 +109,7 @@ export const getAuditLog = async (filters?: { action?: string; dateFrom?: string
     .limit(200);
 
   if (filters?.action) q = q.eq('action', filters.action);
+  if (filters?.targetId) q = q.eq('target_id', filters.targetId);
   if (filters?.dateFrom) q = q.gte('created_at', filters.dateFrom);
   if (filters?.dateTo) q = q.lte('created_at', filters.dateTo);
 
