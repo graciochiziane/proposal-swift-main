@@ -47,7 +47,7 @@ export const getTenant = async (id: string): Promise<TenantDetail | null> => {
 export const getTenantMembers = async (orgId: string): Promise<TenantMember[]> => {
   const { data, error } = await supabase
     .from('organization_members')
-    .select('id, user_id, organization_id, role, joined_at, invited_by, profiles!inner(nome, email)')
+    .select('id, user_id, organization_id, role, joined_at, invited_by, profiles!inner(nome, email, last_seen_at)')
     .eq('organization_id', orgId)
     .order('joined_at', { ascending: true });
   if (error) throw error;
@@ -64,10 +64,40 @@ export const toggleSuspend = async (orgId: string, suspend: boolean, reason = ''
   await logAction(suspend ? 'tenant_suspend' : 'tenant_reactivate', 'organizations', orgId);
 };
 
-export const updateTenant = async (id: string, data: UpdateTenantData) => {
+export const updateTenant = async (id: string, data: UpdateTenantData, previousPlano?: string) => {
   const { error } = await supabase.from('organizations').update(data).eq('id', id);
   if (error) throw error;
-  await logAction('tenant_update', 'organizations', id, undefined, data as unknown as Record<string, unknown>);
+  if (data.plano && previousPlano && data.plano !== previousPlano) {
+    await logAction('plan_change', 'organizations', id, undefined, { from: previousPlano, to: data.plano });
+  } else {
+    await logAction('tenant_update', 'organizations', id, undefined, data as unknown as Record<string, unknown>);
+  }
+};
+
+// ---- Remove Member ----
+export const removeMember = async (memberId: string, orgId: string) => {
+  const { error } = await supabase.rpc('admin_remove_member', {
+    p_member_id: memberId,
+    p_org_id: orgId,
+  });
+  if (error) throw error;
+  await logAction('member_remove', 'organization_members', orgId, undefined, { member_id: memberId });
+};
+
+// ---- Proposal Counts by Period ----
+export const getProposalCounts = async (orgId: string): Promise<{ d30: number; d60: number; d90: number }> => {
+  const now = new Date();
+  const d30 = new Date(now.getTime() - 30 * 86400000).toISOString();
+  const d60 = new Date(now.getTime() - 60 * 86400000).toISOString();
+  const d90 = new Date(now.getTime() - 90 * 86400000).toISOString();
+
+  const [r30, r60, r90] = await Promise.all([
+    supabase.from('proposals').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).gte('created_at', d30),
+    supabase.from('proposals').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).gte('created_at', d60),
+    supabase.from('proposals').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).gte('created_at', d90),
+  ]);
+
+  return { d30: r30.count ?? 0, d60: r60.count ?? 0, d90: r90.count ?? 0 };
 };
 
 // ---- Audit Log ----

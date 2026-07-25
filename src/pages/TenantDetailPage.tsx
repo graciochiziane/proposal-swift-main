@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { getTenant, getTenantMembers, toggleSuspend, updateTenant, getAuditLog, getIaConsumption } from '@/services/adminService';
+import { getTenant, getTenantMembers, toggleSuspend, updateTenant, getAuditLog, getIaConsumption, removeMember, getProposalCounts } from '@/services/adminService';
 import type { TenantDetail, TenantMember, AuditLogEntry, PlanTier } from '@/types/admin';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/table';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Bar, BarChart, XAxis, YAxis } from 'recharts';
-import { ArrowLeft, Save, Ban, CheckCircle, AlertTriangle, Brain } from 'lucide-react';
+import { ArrowLeft, Save, Ban, CheckCircle, AlertTriangle, Brain, Trash2 } from 'lucide-react';
 
 const iaChartConfig: ChartConfig = { count: { label: 'Gerações IA', color: 'hsl(var(--chart-2))' } };
 
@@ -55,6 +55,7 @@ export default function TenantDetailPage() {
   const [editNotes, setEditNotes] = useState('');
   const [suspendReason, setSuspendReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const [proposalCounts, setProposalCounts] = useState({ d30: 0, d60: 0, d90: 0 });
 
   // Check admin
   useEffect(() => {
@@ -72,10 +73,11 @@ export default function TenantDetailPage() {
     (async () => {
       setLoading(true);
       try {
-        const [t, m, ia] = await Promise.all([
+        const [t, m, ia, pc] = await Promise.all([
           getTenant(id),
           getTenantMembers(id),
           getIaConsumption(id, 30),
+          getProposalCounts(id),
         ]);
         if (t) {
           setTenant(t);
@@ -86,6 +88,7 @@ export default function TenantDetailPage() {
         }
         setMembers(m);
         setIaData(ia);
+        setProposalCounts(pc);
       } catch (err) {
         console.error(err);
         toast.error('Erro ao carregar tenant');
@@ -114,7 +117,7 @@ export default function TenantDetailPage() {
         plano: editPlano,
         monthly_price: parseFloat(editPrice) || 0,
         notes: editNotes,
-      });
+      }, tenant?.plano);
       toast.success('Tenant actualizado');
       const t = await getTenant(id);
       if (t) setTenant(t);
@@ -136,6 +139,18 @@ export default function TenantDetailPage() {
       const t = await getTenant(id);
       if (t) setTenant(t);
     } catch { toast.error('Erro ao alterar estado'); }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!id) return;
+    try {
+      await removeMember(memberId, id);
+      toast.success('Membro removido');
+      setMembers(await getTenantMembers(id));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao remover membro';
+      toast.error(msg);
+    }
   };
 
   if (checking || loading) return <div className="p-8 text-muted-foreground">A carregar...</div>;
@@ -194,7 +209,10 @@ export default function TenantDetailPage() {
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Propostas (mês)</CardTitle>
               </CardHeader>
-              <CardContent><div className="text-3xl font-bold">{tenant.propostas_mes_count}</div></CardContent>
+              <CardContent>
+                <div className="text-3xl font-bold">{tenant.propostas_mes_count}</div>
+                <p className="text-xs text-muted-foreground mt-1">30d: {proposalCounts.d30} · 60d: {proposalCounts.d60} · 90d: {proposalCounts.d90}</p>
+              </CardContent>
             </Card>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -300,7 +318,9 @@ export default function TenantDetailPage() {
                     <TableHead>Nome</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
+                    <TableHead>Último Login</TableHead>
                     <TableHead>Entrou em</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -316,7 +336,15 @@ export default function TenantDetailPage() {
                           {m.role.toUpperCase()}
                         </span>
                       </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{m.profiles?.last_seen_at ? new Date(m.profiles.last_seen_at).toLocaleString('pt-PT') : 'Nunca'}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{shortDate(m.joined_at)}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={e => { e.stopPropagation(); handleRemoveMember(m.id); }}
+                          disabled={m.role === 'owner'}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
