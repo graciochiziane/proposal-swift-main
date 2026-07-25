@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { getTenant, getTenantMembers, toggleSuspend, updateTenant, getAuditLog, getIaConsumption, removeMember, getProposalCounts } from '@/services/adminService';
+import { getTenant, getTenantMembers, toggleSuspend, updateTenant, getAuditLog, getIaConsumption, getIaMonthlySummary, removeMember, getProposalCounts } from '@/services/adminService';
 import type { TenantDetail, TenantMember, AuditLogEntry, PlanTier } from '@/types/admin';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,6 +46,7 @@ export default function TenantDetailPage() {
   const [members, setMembers] = useState<TenantMember[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [iaData, setIaData] = useState<{ date: string; count: number }[]>([]);
+  const [iaMonthly, setIaMonthly] = useState<{ month: string; tokens: number; cost_usd: number; count: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Edit form
@@ -73,11 +74,12 @@ export default function TenantDetailPage() {
     (async () => {
       setLoading(true);
       try {
-        const [t, m, ia, pc] = await Promise.all([
+        const [t, m, ia, pc, im] = await Promise.all([
           getTenant(id),
           getTenantMembers(id),
           getIaConsumption(id, 30),
           getProposalCounts(id),
+          getIaMonthlySummary(id),
         ]);
         if (t) {
           setTenant(t);
@@ -89,6 +91,7 @@ export default function TenantDetailPage() {
         setMembers(m);
         setIaData(ia);
         setProposalCounts(pc);
+        setIaMonthly(im);
       } catch (err) {
         console.error(err);
         toast.error('Erro ao carregar tenant');
@@ -239,6 +242,39 @@ export default function TenantDetailPage() {
                     <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ChartContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* IA 6-month summary table */}
+          {iaMonthly.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Brain className="h-4 w-4" /> Consumo IA — Últimos 6 meses
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Mês</TableHead>
+                      <TableHead className="text-right">Gerações</TableHead>
+                      <TableHead className="text-right">Tokens</TableHead>
+                      <TableHead className="text-right">Custo (USD)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {iaMonthly.slice(-6).reverse().map(r => (
+                      <TableRow key={r.month}>
+                        <TableCell className="text-sm">{r.month}</TableCell>
+                        <TableCell className="text-right tabular-nums">{r.count}</TableCell>
+                        <TableCell className="text-right tabular-nums">{r.tokens.toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">${r.cost_usd.toFixed(4)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           )}

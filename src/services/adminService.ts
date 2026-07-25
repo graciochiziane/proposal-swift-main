@@ -120,21 +120,55 @@ export const getAuditLog = async (filters?: { action?: string; dateFrom?: string
   })) as unknown as AuditLogEntry[];
 };
 
-// ---- IA Consumption (for BarChart) ----
-export const getIaConsumption = async (orgId: string, days = 30): Promise<{ date: string; count: number }[]> => {
+// ---- IA Consumption (for BarChart + 6-month summary) ----
+export interface IaConsumptionRow {
+  date: string;
+  count: number;
+  tokens: number;
+  cost_usd: number;
+}
+
+export const getIaConsumption = async (orgId: string, days = 30): Promise<IaConsumptionRow[]> => {
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const { data, error } = await supabase
     .from('proposta_ai')
-    .select('created_at')
+    .select('created_at, tokens_usados, custo_usd')
     .eq('organization_id', orgId)
     .gte('created_at', since)
     .order('created_at', { ascending: true });
   if (error) throw error;
 
-  const map = new Map<string, number>();
+  const map = new Map<string, { count: number; tokens: number; cost_usd: number }>();
   for (const r of data ?? []) {
     const day = (r.created_at as string).slice(0, 10);
-    map.set(day, (map.get(day) ?? 0) + 1);
+    const entry = map.get(day) ?? { count: 0, tokens: 0, cost_usd: 0 };
+    entry.count++;
+    entry.tokens += Number(r.tokens_usados ?? 0);
+    entry.cost_usd += Number(r.custo_usd ?? 0);
+    map.set(day, entry);
   }
-  return Array.from(map.entries()).map(([date, count]) => ({ date, count }));
+  return Array.from(map.entries()).map(([date, v]) => ({ date, ...v }));
+};
+
+/** 6-month summary: month label, total tokens, total cost */
+export const getIaMonthlySummary = async (orgId: string): Promise<{ month: string; tokens: number; cost_usd: number; count: number }[]> => {
+  const since = new Date(Date.now() - 180 * 86400000).toISOString();
+  const { data, error } = await supabase
+    .from('proposta_ai')
+    .select('created_at, tokens_usados, custo_usd')
+    .eq('organization_id', orgId)
+    .gte('created_at', since)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  const months = new Map<string, { tokens: number; cost_usd: number; count: number }>();
+  for (const r of data ?? []) {
+    const month = (r.created_at as string).slice(0, 7);
+    const entry = months.get(month) ?? { tokens: 0, cost_usd: 0, count: 0 };
+    entry.count++;
+    entry.tokens += Number(r.tokens_usados ?? 0);
+    entry.cost_usd += Number(r.custo_usd ?? 0);
+    months.set(month, entry);
+  }
+  return Array.from(months.entries()).map(([month, v]) => ({ month, ...v }));
 };
