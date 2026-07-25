@@ -54,97 +54,12 @@ export const analyticsService = {
 
   /**
    * Carrega todas as métricas principais do dashboard
+   * FIX 2.1: Usa RPC admin_platform_metrics() em vez de 9 queries
    */
   async getPlatformMetrics(): Promise<PlatformMetrics> {
-    const now = new Date();
-    const today = formatDate(now);
-    const weekAgo = formatDate(daysAgo(7));
-    const monthAgo = formatDate(daysAgo(30));
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-
-    const [
-      profilesRes,
-      onlineRes,
-      todayRes,
-      weekRes,
-      monthRes,
-      signupsMonthRes,
-      proposalsMonthRes,
-      proposalsValueRes,
-      clientsMonthRes,
-    ] = await Promise.all([
-      // Total users
-      supabase.from('profiles').select('id', { count: 'exact', head: true }),
-
-      // Online now (últimos 15 min)
-      supabase
-        .from('profiles')
-        .select('id', { count: 'exact', head: true })
-        .gt('last_seen_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()),
-
-      // Acessaram hoje
-      supabase
-        .from('user_activity')
-        .select('user_id')
-        .gte('created_at', `${today}T00:00:00`),
-
-      // Acessaram na semana
-      supabase
-        .from('user_activity')
-        .select('user_id')
-        .gte('created_at', `${weekAgo}T00:00:00`),
-
-      // Acessaram no mês
-      supabase
-        .from('user_activity')
-        .select('user_id')
-        .gte('created_at', `${monthAgo}T00:00:00`),
-
-      // Novos registos este mês
-      supabase
-        .from('profiles')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', `${monthStart}T00:00:00`),
-
-      // Propostas este mês
-      supabase
-        .from('proposals')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', `${monthStart}T00:00:00`),
-
-      // Valor total de propostas
-      supabase
-        .from('proposals')
-        .select('total'),
-
-      // Clientes criados este mês
-      supabase
-        .from('clients')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', `${monthStart}T00:00:00`),
-    ]);
-
-    // Únicos por período
-    const uniqueUsers = (data: { user_id: string }[] | null) => {
-      if (!data) return 0;
-      return new Set(data.map(r => r.user_id)).size;
-    };
-
-    const proposalsValue = (proposalsValueRes.data ?? []).reduce(
-      (sum, r) => sum + Number(r.total ?? 0), 0
-    );
-
-    return {
-      users_online_now: onlineRes.count ?? 0,
-      accessed_today: uniqueUsers(todayRes.data),
-      accessed_week: uniqueUsers(weekRes.data),
-      accessed_month: uniqueUsers(monthRes.data),
-      total_users: profilesRes.count ?? 0,
-      new_signups_this_month: signupsMonthRes.count ?? 0,
-      proposals_this_month: proposalsMonthRes.count ?? 0,
-      clients_this_month: clientsMonthRes.count ?? 0,
-      proposals_total_value: proposalsValue,
-    };
+    const { data, error } = await supabase.rpc('admin_platform_metrics');
+    if (error) throw error;
+    return data as unknown as PlatformMetrics;
   },
 
   /**
