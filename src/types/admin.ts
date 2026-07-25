@@ -18,6 +18,8 @@ export interface Tenant {
   monthly_price: number;
   notes: string;
   last_proposal_created_at: string | null;
+  contact_email: string;
+  nuit: string;
   created_at: string;
   updated_at: string;
 }
@@ -34,7 +36,7 @@ export interface TenantMember {
   role: string;
   joined_at: string;
   invited_by: string | null;
-  profiles?: { nome: string | null; email: string };
+  profiles?: { nome: string | null; email: string; last_seen_at: string | null };
 }
 
 export interface AuditLogEntry {
@@ -53,6 +55,8 @@ export interface CreateTenantData {
   nome: string;
   email: string;
   plano: PlanTier;
+  nuit?: string;
+  contact_email?: string;
 }
 
 export interface UpdateTenantData {

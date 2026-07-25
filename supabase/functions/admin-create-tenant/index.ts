@@ -10,7 +10,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { nome, email, plano } = await req.json();
+    const { nome, email, plano, nuit, contact_email } = await req.json();
     if (!nome || !email) {
       return new Response(JSON.stringify({ error: "nome e email obrigatorios" }), { status: 400 });
     }
@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
     // Create org
     const { data: org, error: orgError } = await adminClient
       .from("organizations")
-      .insert({ nome, slug, plano: plano || "free" })
+      .insert({ nome, slug, plano: plano || "free", nuit: nuit || '', contact_email: contact_email || email })
       .select()
       .single();
     if (orgError || !org) {
@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
       target_table: "organizations",
       target_id: org.id,
       target_owner_id: newUserId,
-      target_snapshot: { nome, email, plano, slug },
+      target_snapshot: { nome, email, plano, slug, nuit, contact_email },
     });
 
     return new Response(JSON.stringify({ success: true, org_id: org.id, user_id: newUserId }), { status: 200 });
