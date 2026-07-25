@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { analyticsService } from '@/services/analyticsService';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -36,6 +37,8 @@ import {
 import { Bar, BarChart, XAxis, YAxis, Line, LineChart, ResponsiveContainer } from 'recharts';
 import {
   MoreHorizontal,
+  Plus,
+  ArrowUpDown,
   Search,
   Users,
   FileText,
@@ -54,10 +57,9 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { listTenants, getAuditLog } from '@/services/adminService';
-import type { Tenant, AuditLogEntry } from '@/types/admin';
+import type { Tenant, AuditLogEntry, PlanTier, CreateTenantData } from '@/types/admin';
 
 // ---- Types ----
-type PlanTier = 'free' | 'pro' | 'business';
 type AppRole = 'admin' | 'user';
 
 interface AdminUser {
@@ -146,6 +148,13 @@ export default function Admin() {
   const [loadingTenants, setLoadingTenants] = useState(true);
   const [tenantSearch, setTenantSearch] = useState('');
   const [showIaAlert, setShowIaAlert] = useState(false);
+  const [tenantSort, setTenantSort] = useState<'created_at' | 'last_proposal_created_at' | 'monthly_price'>('created_at');
+  const [showCreateTenant, setShowCreateTenant] = useState(false);
+  const [showPlanLimits, setShowPlanLimits] = useState(false);
+  const [newTenant, setNewTenant] = useState<CreateTenantData>({ nome: '', email: '', plano: 'free' });
+  const [creating, setCreating] = useState(false);
+  const [auditTenantFilter, setAuditTenantFilter] = useState('');
+  const [summary24h, setSummary24h] = useState({ proposals: 0, members: 0, ia: 0 });
 
   // Audit tab state
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
@@ -193,6 +202,35 @@ export default function Admin() {
       toast.error('Erro ao carregar auditoria');
     }
     setLoadingAudit(false);
+  };
+
+  // Load 24h summary
+  const loadSummary24h = async () => {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const [pRes, mRes, iaRes] = await Promise.all([
+      supabase.from('proposals').select('id', { count: 'exact', head: true }).gte('created_at', since),
+      supabase.from('organization_members').select('id', { count: 'exact', head: true }).gte('joined_at', since),
+      supabase.from('proposta_ai').select('id', { count: 'exact', head: true }).gte('created_at', since),
+    ]);
+    setSummary24h({ proposals: pRes.count ?? 0, members: mRes.count ?? 0, ia: iaRes.count ?? 0 });
+  };
+
+  // Create tenant
+  const handleCreateTenant = async () => {
+    if (!newTenant.nome || !newTenant.email) { toast.error('Nome e email obrigatórios'); return; }
+    setCreating(true);
+    try {
+      const { error } = await supabase.functions.invoke('admin-create-tenant', { body: newTenant });
+      if (error) throw error;
+      toast.success('Tenant criado com sucesso');
+      setShowCreateTenant(false);
+      setNewTenant({ nome: '', email: '', plano: 'free' });
+      loadTenantsData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao criar tenant';
+      toast.error(msg);
+    }
+    setCreating(false);
   };
 
   // Load users data
@@ -261,6 +299,7 @@ export default function Admin() {
       loadMetricsData();
       loadTenantsData();
       loadAuditData();
+      loadSummary24h();
     }
   }, [isAdmin]);
 
@@ -273,14 +312,22 @@ export default function Admin() {
     return () => clearInterval(interval);
   }, [isAdmin, activeTab]);
 
-  // Tenants filtered with IA alert
+  // Tenants filtered, sorted, IA alert
   const filteredTenants = useMemo(() => {
-    let list = tenants;
+    let list = [...tenants];
     const q = tenantSearch.trim().toLowerCase();
-    if (q) list = list.filter(t => t.nome.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q));
-    if (showIaAlert) list = list.filter(t => t.geracoes_ia_mes_count > 0 && t.plano !== 'free' && t.geracoes_ia_mes_count >= 50);
+    if (q) list = list.filter(t => t.nome.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q) || (t.contact_email ?? '').toLowerCase().includes(q));
+    if (showIaAlert) list = list.filter(t => t.geracoes_ia_mes_count > 0);
+    // Sort
+    const sortKey = tenantSort;
+    list.sort((a, b) => {
+      const aVal = a[sortKey] ?? '';
+      const bVal = b[sortKey] ?? '';
+      if (sortKey === 'monthly_price') return Number(bVal) - Number(aVal);
+      return String(bVal).localeCompare(String(aVal));
+    });
     return list;
-  }, [tenants, tenantSearch, showIaAlert]);
+  }, [tenants, tenantSearch, showIaAlert, tenantSort]);
 
   // Users tab logic
   const filtered = useMemo(() => {
@@ -521,6 +568,30 @@ export default function Admin() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* ---- 24h Summary ---- */}
+              <Card className="border-blue-500/20 bg-blue-500/5">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Últimas 24 horas</CardTitle>
+                  <Clock className="h-4 w-4 text-blue-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-2xl font-bold">{summary24h.proposals}</div>
+                      <p className="text-xs text-muted-foreground">Propostas criadas</p>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold">{summary24h.members}</div>
+                      <p className="text-xs text-muted-foreground">Novos membros</p>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold">{summary24h.ia}</div>
+                      <p className="text-xs text-muted-foreground">Gerações IA</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* ---- Online Users List ---- */}
               <Card>
@@ -873,10 +944,25 @@ export default function Admin() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="relative w-full sm:w-60">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Pesquisar nome..." value={tenantSearch} onChange={e => setTenantSearch(e.target.value)} className="pl-9" />
+                    <Input placeholder="Pesquisar nome, slug ou email..." value={tenantSearch} onChange={e => setTenantSearch(e.target.value)} className="pl-9" />
                   </div>
+                  <Button variant="outline" size="sm" onClick={() => setTenantSort('created_at')} className={`gap-1 ${tenantSort === 'created_at' ? 'border-primary' : ''}`}>
+                    <ArrowUpDown className="h-3 w-3" /> Data
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setTenantSort('last_proposal_created_at')} className={`gap-1 ${tenantSort === 'last_proposal_created_at' ? 'border-primary' : ''}`}>
+                    <ArrowUpDown className="h-3 w-3" /> Actividade
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setTenantSort('monthly_price')} className={`gap-1 ${tenantSort === 'monthly_price' ? 'border-primary' : ''}`}>
+                    <ArrowUpDown className="h-3 w-3" /> Receita
+                  </Button>
                   <Button variant={showIaAlert ? 'destructive' : 'outline'} size="sm" onClick={() => setShowIaAlert(v => !v)} className="gap-1 whitespace-nowrap">
                     <AlertTriangle className="h-3.5 w-3.5" /> Alerta IA >80%
+                  </Button>
+                  <Button size="sm" onClick={() => setShowCreateTenant(true)} className="gap-1">
+                    <Plus className="h-3.5 w-3.5" /> Novo Tenant
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowPlanLimits(true)} className="gap-1">
+                    <Layers className="h-3.5 w-3.5" /> Planos
                   </Button>
                 </div>
               </div>
@@ -890,6 +976,7 @@ export default function Admin() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Nome</TableHead>
+                        <TableHead>Email</TableHead>
                         <TableHead>Plano</TableHead>
                         <TableHead className="text-right">Propostas/mês</TableHead>
                         <TableHead className="text-right">IA/mês</TableHead>
@@ -901,6 +988,7 @@ export default function Admin() {
                       {filteredTenants.map(t => (
                         <TableRow key={t.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/admin/tenants/${t.id}`)}>
                           <TableCell className="font-medium">{t.nome}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{t.contact_email || '—'}</TableCell>
                           <TableCell>
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${planBadge[t.plano]}`}>{t.plano.toUpperCase()}</span>
                           </TableCell>
@@ -917,7 +1005,7 @@ export default function Admin() {
                         </TableRow>
                       ))}
                       {filteredTenants.length === 0 && (
-                        <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum tenant encontrado</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nenhum tenant encontrado</TableCell></TableRow>
                       )}
                     </TableBody>
                   </Table>
@@ -936,7 +1024,12 @@ export default function Admin() {
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <CardTitle>Registo de Auditoria</CardTitle>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <Input placeholder="Acção (ex: tenant_update)" value={auditActionFilter} onChange={e => setAuditActionFilter(e.target.value)} className="w-full sm:w-48" />
+                  <Input placeholder="Acção (ex: tenant_update)" value={auditActionFilter} onChange={e => setAuditActionFilter(e.target.value)} className="w-full sm:w-40" />
+                  <select className="rounded-md border bg-background px-3 py-2 text-sm max-w-[180px]"
+                    value={auditTenantFilter} onChange={e => setAuditTenantFilter(e.target.value)}>
+                    <option value="">Todos os tenants</option>
+                    {tenants.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                  </select>
                   <Input type="date" value={auditDateFrom} onChange={e => setAuditDateFrom(e.target.value)} className="w-full sm:w-40" />
                   <Input type="date" value={auditDateTo} onChange={e => setAuditDateTo(e.target.value)} className="w-full sm:w-40" />
                   <Button size="sm" variant="outline" onClick={loadAuditData}>Filtrar</Button>
@@ -959,7 +1052,7 @@ export default function Admin() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {auditLogs.map(l => (
+                      {auditLogs.filter(l => !auditTenantFilter || l.target_id === auditTenantFilter).map(l => (
                         <TableRow key={l.id}>
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(l.created_at).toLocaleString('pt-PT')}</TableCell>
                           <TableCell className="text-sm">{l.admin_email}</TableCell>
@@ -978,7 +1071,96 @@ export default function Admin() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Create Tenant Dialog */}
+        <Dialog open={showCreateTenant} onOpenChange={setShowCreateTenant}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Novo Tenant</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-muted-foreground">Nome</label>
+                <Input value={newTenant.nome} onChange={e => setNewTenant(p => ({ ...p, nome: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Email de contacto</label>
+                <Input type="email" value={newTenant.email} onChange={e => setNewTenant(p => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">NUIT</label>
+                <Input value={newTenant.nuit || ''} onChange={e => setNewTenant(p => ({ ...p, nuit: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Plano</label>
+                <select className="w-full mt-1 rounded-md border bg-background px-3 py-2 text-sm"
+                  value={newTenant.plano} onChange={e => setNewTenant(p => ({ ...p, plano: e.target.value as PlanTier }))}>
+                  <option value="free">Free</option>
+                  <option value="pro">Pro</option>
+                  <option value="business">Business</option>
+                </select>
+              </div>
+              <Button onClick={handleCreateTenant} disabled={creating} className="w-full">{creating ? 'A criar...' : 'Criar Tenant'}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Plan Limits Dialog */}
+        <Dialog open={showPlanLimits} onOpenChange={setShowPlanLimits}>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle>Gestão de Planos</DialogTitle></DialogHeader>
+            <PlanLimitsManager onClose={() => setShowPlanLimits(false)} />
+          </DialogContent>
+        </Dialog>
       </Tabs>
     </div>
+  );
+}
+
+// ---- Plan Limits Sub-component ----
+function PlanLimitsManager({ onClose }: { onClose: () => void }) {
+  const [plans, setPlans] = useState<{ plano: string; propostas_mes: number; geracoes_ia_mes: number; clientes_max: number | null }[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.from('plan_limits').select('*').then(({ data }) => setPlans((data ?? []) as typeof plans));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    for (const p of plans) {
+      await supabase.from('plan_limits').update({
+        propostas_mes: p.propostas_mes,
+        geracoes_ia_mes: p.geracoes_ia_mes,
+        clientes_max: p.clientes_max,
+      }).eq('plano', p.plano);
+    }
+    toast.success('Planos actualizados');
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Plano</TableHead>
+            <TableHead className="text-right">Propostas/mês</TableHead>
+            <TableHead className="text-right">IA/mês</TableHead>
+            <TableHead className="text-right">Clientes max</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {plans.map(p => (
+            <TableRow key={p.plano}>
+              <TableCell className="font-medium capitalize">{p.plano}</TableCell>
+              <TableCell><Input type="number" className="w-24 text-right" value={p.propostas_mes === 2147483647 ? '' : p.propostas_mes} placeholder="∞" onChange={e => setPlans(plans.map(x => x.plano === p.plano ? { ...x, propostas_mes: e.target.value ? Number(e.target.value) : 2147483647 } : x))} /></TableCell>
+              <TableCell><Input type="number" className="w-24 text-right" value={p.geracoes_ia_mes === 2147483647 ? '' : p.geracoes_ia_mes} placeholder="∞" onChange={e => setPlans(plans.map(x => x.plano === p.plano ? { ...x, geracoes_ia_mes: e.target.value ? Number(e.target.value) : 2147483647 } : x))} /></TableCell>
+              <TableCell><Input type="number" className="w-24 text-right" value={p.clientes_max ?? ''} placeholder="∞" onChange={e => setPlans(plans.map(x => x.plano === p.plano ? { ...x, clientes_max: e.target.value ? Number(e.target.value) : null } : x))} /></TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <Button onClick={handleSave} disabled={saving} className="w-full mt-4">{saving ? 'A guardar...' : 'Guardar'}</Button>
+    </>
   );
 }
