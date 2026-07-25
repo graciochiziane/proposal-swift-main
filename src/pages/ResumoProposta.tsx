@@ -4,11 +4,12 @@ import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { calcularTotal } from '@/lib/calculos';
-import { gerarPDF } from '@/lib/pdf';
-import { FileDown, Pencil, Copy, Loader2, Sparkles } from 'lucide-react';
+import { gerarPDF, getAllTemplates } from '@/lib/pdf';
+import { FileDown, FileText, Pencil, Copy, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { converterPropostaEmFactura, getFaturasPorProposta, atualizarStatusFatura } from '@/services/faturaService';
 import type { PDFTemplate, Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
+import TemplateSelectorModal from '@/components/pdf/TemplateSelectorModal';
 
 export default function ResumoProposta() {
   const { id } = useParams();
@@ -194,22 +195,12 @@ export default function ResumoProposta() {
               📄 Converter em Factura
             </button>
           )}
-          <select
-            className="px-3 py-2 rounded-lg bg-secondary border border-border text-sm"
-            value={template}
-            onChange={e => setTemplate(e.target.value as PDFTemplate)}
-          >
-            <optgroup label="Gratuito">
-              <option value="classic">Clássico</option>
-              <option value="modern">Moderno</option>
-              <option value="executive">Executivo</option>
-            </optgroup>
-            <optgroup label="PRO">
-              <option value="sleek">Sleek</option>
-              <option value="sidebar">Sidebar</option>
-              <option value="business">Business</option>
-            </optgroup>
-          </select>
+          <TemplateSelectorModal value={template} onChange={setTemplate}>
+            <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors">
+              <FileText className="h-4 w-4" />
+              {getAllTemplates().find(t => t.id === template)?.nome ?? 'Template'}
+            </button>
+          </TemplateSelectorModal>
           <button
             onClick={() => navigate(`/proposta/${proposta.id}/gerar-ia`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold transition-all"
