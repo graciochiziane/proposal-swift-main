@@ -155,6 +155,7 @@ export default function Admin() {
   const [creating, setCreating] = useState(false);
   const [auditTenantFilter, setAuditTenantFilter] = useState('');
   const [summary24h, setSummary24h] = useState({ proposals: 0, members: 0, ia: 0 });
+  const [planLimitsMap, setPlanLimitsMap] = useState<Record<string, number>>({});
 
   // Audit tab state
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
@@ -300,6 +301,12 @@ export default function Admin() {
       loadTenantsData();
       loadAuditData();
       loadSummary24h();
+      // Carregar limites dos planos para alerta IA >80%
+      supabase.from('plan_limits').select('plano, geracoes_ia_mes').then(({ data }) => {
+        const map: Record<string, number> = {};
+        (data ?? []).forEach(r => { map[r.plano as string] = r.geracoes_ia_mes as number; });
+        setPlanLimitsMap(map);
+      });
     }
   }, [isAdmin]);
 
@@ -317,7 +324,11 @@ export default function Admin() {
     let list = [...tenants];
     const q = tenantSearch.trim().toLowerCase();
     if (q) list = list.filter(t => t.nome.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q) || (t.contact_email ?? '').toLowerCase().includes(q));
-    if (showIaAlert) list = list.filter(t => t.geracoes_ia_mes_count > 0);
+    if (showIaAlert) list = list.filter(t => {
+      const limit = planLimitsMap[t.plano];
+      if (!limit || limit >= 2147483647) return false; // plano ilimitado
+      return limit > 0 && (t.geracoes_ia_mes_count / limit) > 0.8;
+    });
     // Sort
     const sortKey = tenantSort;
     list.sort((a, b) => {
@@ -327,7 +338,7 @@ export default function Admin() {
       return String(bVal).localeCompare(String(aVal));
     });
     return list;
-  }, [tenants, tenantSearch, showIaAlert, tenantSort]);
+  }, [tenants, tenantSearch, showIaAlert, tenantSort, planLimitsMap]);
 
   // Users tab logic
   const filtered = useMemo(() => {
