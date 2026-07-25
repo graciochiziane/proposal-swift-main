@@ -967,7 +967,7 @@ export default function Admin() {
                     <ArrowUpDown className="h-3 w-3" /> Receita
                   </Button>
                   <Button variant={showIaAlert ? 'destructive' : 'outline'} size="sm" onClick={() => setShowIaAlert(v => !v)} className="gap-1 whitespace-nowrap">
-                    <AlertTriangle className="h-3.5 w-3.5" /> Alerta IA >80%
+                    <AlertTriangle className="h-3.5 w-3.5" />{' '}Alerta IA &gt;80%
                   </Button>
                   <Button size="sm" onClick={() => setShowCreateTenant(true)} className="gap-1">
                     <Plus className="h-3.5 w-3.5" /> Novo Tenant
