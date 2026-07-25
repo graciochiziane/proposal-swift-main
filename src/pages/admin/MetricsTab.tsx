@@ -211,7 +211,7 @@ export function MetricsTab({ activeTab }: { activeTab: string }) {
                     <p className="text-xs text-muted-foreground">{timeAgo(u.last_seen_at)}</p>
                     <p className="text-[10px] text-muted-foreground">{u.visits_today} visitas hoje</p>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border shrink-0 ${planBadge[u.plano as PlanTier] ?? planBadge.free}`]}>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border shrink-0 ${planBadge[u.plano as PlanTier] ?? planBadge.free}`}>
                     {u.plano.toUpperCase()}
                   </span>
                 </div>
