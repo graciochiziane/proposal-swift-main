@@ -278,47 +278,69 @@ export default function CriarProposta() {
           <label className="text-sm font-medium">Itens *</label>
           {itens.map((item, idx) => (
             <div key={item.id} className="relative space-y-2">
-              {/* Row 1: Nome - full width */}
-              <div className="relative" ref={idx === activeItemIndex ? catalogoRef : undefined}>
-                <input
-                  className={inputClass}
-                  placeholder="Nome do item"
-                  value={item.nome}
-                  onChange={e => {
-                    updateItem(item.id, 'nome', e.target.value);
-                    setCatalogoFilter(e.target.value);
-                    setCatalogoOpen(e.target.value.length > 0);
-                    setActiveItemIndex(idx);
-                  }}
-                  onFocus={() => {
-                    if (item.nome.length > 0) {
-                      setCatalogoFilter(item.nome);
-                      setCatalogoOpen(true);
+              {/* Row 1: Nome + Action icons */}
+              <div className="flex items-center gap-1.5" ref={idx === activeItemIndex ? catalogoRef : undefined}>
+                <div className="relative flex-1">
+                  <input
+                    className={inputClass}
+                    placeholder="Nome do item"
+                    value={item.nome}
+                    onChange={e => {
+                      updateItem(item.id, 'nome', e.target.value);
+                      setCatalogoFilter(e.target.value);
+                      setCatalogoOpen(e.target.value.length > 0);
                       setActiveItemIndex(idx);
-                    }
-                  }}
-                  onBlur={() => setTimeout(() => setCatalogoOpen(false), 200)}
-                />
-                {catalogoOpen && catalogoFiltrado.length > 0 && idx === activeItemIndex && (
-                  <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {catalogoFiltrado.slice(0, 8).map(catItem => (
-                      <button
-                        key={catItem.id}
-                        type="button"
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-secondary transition-colors flex justify-between items-center"
-                        onMouseDown={() => selectFromCatalogo(catItem, item.id)}
-                      >
-                        <span className="truncate">{catItem.nome}</span>
-                        <span className="text-muted-foreground text-xs ml-2 whitespace-nowrap">{formatMZN(catItem.precoUnitario)}</span>
-                      </button>
-                    ))}
-                  </div>
+                    }}
+                    onFocus={() => {
+                      if (item.nome.length > 0) {
+                        setCatalogoFilter(item.nome);
+                        setCatalogoOpen(true);
+                        setActiveItemIndex(idx);
+                      }
+                    }}
+                    onBlur={() => setTimeout(() => setCatalogoOpen(false), 200)}
+                  />
+                  {catalogoOpen && catalogoFiltrado.length > 0 && idx === activeItemIndex && (
+                    <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {catalogoFiltrado.slice(0, 8).map(catItem => (
+                        <button
+                          key={catItem.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-secondary transition-colors flex justify-between items-center"
+                          onMouseDown={() => selectFromCatalogo(catItem, item.id)}
+                        >
+                          <span className="truncate">{catItem.nome}</span>
+                          <span className="text-muted-foreground text-xs ml-2 whitespace-nowrap">{formatMZN(catItem.precoUnitario)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {item.nome.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => handleAddToCatalog(item)}
+                    className="p-2 md:p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors shrink-0"
+                    title="Salvar no catálogo"
+                  >
+                    <Bookmark className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                  </button>
+                )}
+                {itens.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeItem(item.id)}
+                    className="p-2 md:p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                    title="Remover item"
+                  >
+                    <Trash2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                  </button>
                 )}
               </div>
 
-              {/* Row 2: Qtd (20%) | Preço (35%) | Subtotal (35%) | Actions (10%) - desktop grid */}
+              {/* Row 2: Qtd | Preço | Subtotal */}
               <div className="grid grid-cols-12 gap-2 md:gap-2 items-end">
-                <div className="col-span-3">
+                <div className="col-span-4">
                   <label className="text-xs text-muted-foreground mb-1 block md:hidden">Qtd</label>
                   <input
                     type="number"
@@ -342,33 +364,11 @@ export default function CriarProposta() {
                     placeholder="Preço"
                   />
                 </div>
-                <div className="col-span-3 flex items-center justify-end">
-                  <label className="text-xs text-muted-foreground mb-1 block md:hidden w-full text-right">Subtotal</label>
-                  <span className="text-sm font-medium text-primary whitespace-nowrap truncate">
+                <div className="col-span-4">
+                  <label className="text-xs text-muted-foreground mb-1 block md:hidden">Subtotal</label>
+                  <div className={inputClass + ' text-right bg-primary/5 border-primary/20 text-primary font-medium'}>
                     {formatMZN(item.subtotal)}
-                  </span>
-                </div>
-                <div className="col-span-2 flex items-center justify-end gap-1">
-                  {item.nome.trim() && (
-                    <button
-                      type="button"
-                      onClick={() => handleAddToCatalog(item)}
-                      className="p-2 md:p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-                      title="Salvar no catálogo"
-                    >
-                      <Bookmark className="h-4 w-4 md:h-3.5 md:w-3.5" />
-                    </button>
-                  )}
-                  {itens.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.id)}
-                      className="p-2 md:p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                      title="Remover item"
-                    >
-                      <Trash2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
-                    </button>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
