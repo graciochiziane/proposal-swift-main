@@ -287,7 +287,7 @@ export default function CriarProposta() {
           {itens.map((item, idx) => (
             <div key={item.id} className="relative space-y-2">
               {/* Row 1: Nome + Action icons */}
-              <div className="flex items-center gap-2" ref={idx === activeItemIndex ? catalogoRef : undefined}>
+              <div className="flex items-center gap-1" ref={idx === activeItemIndex ? catalogoRef : undefined}>
                 <div className="relative flex-1 min-w-0">
                   <input
                     className={inputClass}
