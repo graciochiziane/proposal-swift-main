@@ -35,6 +35,7 @@ export default function CriarProposta() {
   const [catalogoOpen, setCatalogoOpen] = useState(false);
   const [catalogoFilter, setCatalogoFilter] = useState('');
   const [activeItemIndex, setActiveItemIndex] = useState(-1);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
   const catalogoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -287,7 +288,7 @@ export default function CriarProposta() {
             <div key={item.id} className="relative space-y-2">
               {/* Row 1: Nome + Action icons */}
               <div className="flex items-center gap-2" ref={idx === activeItemIndex ? catalogoRef : undefined}>
-                <div className="relative flex-1">
+                <div className="relative flex-1 min-w-0">
                   <input
                     className={inputClass}
                     placeholder="Nome do item"
@@ -353,7 +354,9 @@ export default function CriarProposta() {
                     type="text"
                     inputMode="numeric"
                     className={inputClass + ' text-center'}
-                    value={item.quantidade > 0 ? fmtThousand(item.quantidade) : ''}
+                    value={focusedField === `${item.id}-qtd` ? String(item.quantidade) : (item.quantidade > 0 ? fmtThousand(item.quantidade) : '')}
+                    onFocus={() => setFocusedField(`${item.id}-qtd`)}
+                    onBlur={() => setFocusedField(null)}
                     onChange={e => updateItem(item.id, 'quantidade', parseThousand(e.target.value))}
                     placeholder="Qtd"
                   />
@@ -364,7 +367,9 @@ export default function CriarProposta() {
                     type="text"
                     inputMode="decimal"
                     className={inputClass + ' text-right'}
-                    value={item.precoUnitario > 0 ? fmtThousand(item.precoUnitario, 2) : ''}
+                    value={focusedField === `${item.id}-preco` ? String(item.precoUnitario) : (item.precoUnitario > 0 ? fmtThousand(item.precoUnitario, 2) : '')}
+                    onFocus={() => setFocusedField(`${item.id}-preco`)}
+                    onBlur={() => setFocusedField(null)}
                     onChange={e => updateItem(item.id, 'precoUnitario', parseThousand(e.target.value))}
                     placeholder="Preço"
                   />
