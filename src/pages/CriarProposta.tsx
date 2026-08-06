@@ -85,6 +85,13 @@ export default function CriarProposta() {
   const removeItem = (itemId: string) =>
     itens.length > 1 && setItens(prev => prev.filter(i => i.id !== itemId));
 
+  const fmtThousand = (n: number, decimals = 0) =>
+    n.toLocaleString('pt-MZ', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  const parseThousand = (s: string) => {
+    const c = s.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.');
+    return parseFloat(c) || 0;
+  };
+
   const updateItem = (itemId: string, field: keyof ItemProposta, value: string | number) => {
     setItens(prev => prev.map(item => {
       if (item.id !== itemId) return item;
@@ -279,7 +286,7 @@ export default function CriarProposta() {
           {itens.map((item, idx) => (
             <div key={item.id} className="relative space-y-2">
               {/* Row 1: Nome + Action icons */}
-              <div className="flex items-center gap-1.5" ref={idx === activeItemIndex ? catalogoRef : undefined}>
+              <div className="flex items-center gap-2" ref={idx === activeItemIndex ? catalogoRef : undefined}>
                 <div className="relative flex-1">
                   <input
                     className={inputClass}
@@ -339,34 +346,32 @@ export default function CriarProposta() {
               </div>
 
               {/* Row 2: Qtd | Preço | Subtotal */}
-              <div className="grid grid-cols-12 gap-2 md:gap-2 items-end">
-                <div className="col-span-4">
+              <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-2 items-end">
+                <div className="col-span-3 md:col-span-4">
                   <label className="text-xs text-muted-foreground mb-1 block md:hidden">Qtd</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     className={inputClass + ' text-center'}
-                    min="0"
-                    step="1"
-                    value={item.quantidade}
-                    onChange={e => updateItem(item.id, 'quantidade', Number(e.target.value))}
+                    value={item.quantidade > 0 ? fmtThousand(item.quantidade) : ''}
+                    onChange={e => updateItem(item.id, 'quantidade', parseThousand(e.target.value))}
                     placeholder="Qtd"
                   />
                 </div>
-                <div className="col-span-4">
+                <div className="col-span-3 md:col-span-4">
                   <label className="text-xs text-muted-foreground mb-1 block md:hidden">Preço</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     className={inputClass + ' text-right'}
-                    min="0"
-                    step="0.01"
-                    value={item.precoUnitario}
-                    onChange={e => updateItem(item.id, 'precoUnitario', Number(e.target.value))}
+                    value={item.precoUnitario > 0 ? fmtThousand(item.precoUnitario, 2) : ''}
+                    onChange={e => updateItem(item.id, 'precoUnitario', parseThousand(e.target.value))}
                     placeholder="Preço"
                   />
                 </div>
                 <div className="col-span-4">
                   <label className="text-xs text-muted-foreground mb-1 block md:hidden">Subtotal</label>
-                  <div className={inputClass + ' text-right bg-primary/5 border-primary/20 text-primary font-medium'}>
+                  <div className="text-sm font-medium text-primary text-right flex items-center px-3 h-[calc(2.5rem+2px)]">
                     {formatMZN(item.subtotal)}
                   </div>
                 </div>
