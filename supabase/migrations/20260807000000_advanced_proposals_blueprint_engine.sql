@@ -1,11 +1,19 @@
 -- ============================================================
 -- ProposalJa — Advanced Proposals: Blueprint Engine
 -- Assumes: organizations, organization_members, plan_tier,
---   has_role(), user_belongs_to_org(), has_org_role_min_in_org()
---   already exist in the database.
+--   user_belongs_to_org(), has_org_role_min_in_org() already exist.
+-- Fixes: has_role() — redefined to query user_roles (not profiles.role).
 -- ============================================================
 
 BEGIN;
+
+-- ============================================================
+-- 0. FIX: has_role() — queries user_roles table, NOT profiles.role
+--     (profiles has no role column; user_roles has user_id + role)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.has_role(p_user_id UUID, p_role TEXT)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$ SELECT EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = p_user_id AND ur.role = p_role); $$;
 
 -- ============================================================
 -- 1. ENUM: visual_style (idempotent)
