@@ -13,7 +13,7 @@ BEGIN;
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.has_role(p_user_id UUID, p_role TEXT)
 RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = p_user_id AND ur.role = p_role); $$;
+AS $$ SELECT EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = p_user_id AND ur.role::text = p_role); $$;
 
 -- ============================================================
 -- 1. ENUM: visual_style (idempotent)
