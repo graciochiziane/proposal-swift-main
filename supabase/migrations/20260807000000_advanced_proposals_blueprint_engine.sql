@@ -65,12 +65,14 @@ END $$;
 -- ============================================================
 -- 2. TRIGGER FUNCTION: set_updated_at (only if missing)
 -- ============================================================
-DO $$ BEGIN
+DO $do_set_updated_at$ BEGIN
   CREATE FUNCTION public.set_updated_at()
   RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
-  AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
+  AS $fn_set_updated_at$
+  BEGIN NEW.updated_at = now(); RETURN NEW; END;
+  $fn_set_updated_at$;
 EXCEPTION WHEN duplicate_function THEN NULL;
-END $$;
+END $do_set_updated_at$;
 
 -- ============================================================
 -- 3. business_categories
