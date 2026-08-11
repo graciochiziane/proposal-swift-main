@@ -211,15 +211,21 @@ END $$;
 -- ============================================================
 DO $$ DECLARE _tbl text; _trg text;
 BEGIN
-  FOR _tbl, _trg IN SELECT unnest(ARRAY[
-    ('business_categories','trg_business_categories_updated_at'),
-    ('proposal_blueprints','trg_proposal_blueprints_updated_at'),
-    ('proposal_sections','trg_proposal_sections_updated_at'),
-    ('section_questions','trg_section_questions_updated_at'),
-    ('company_brand_profiles','trg_company_brand_profiles_updated_at'),
-    ('advanced_proposals','trg_advanced_proposals_updated_at'),
-    ('proposal_section_answers','trg_proposal_section_answers_updated_at')
-  ]) LOOP
+  FOR _tbl, _trg IN
+    SELECT * FROM (
+      VALUES
+        ('business_categories','trg_business_categories_updated_at'),
+        ('proposal_blueprints','trg_proposal_blueprints_updated_at'),
+        ('proposal_sections','trg_proposal_sections_updated_at'),
+        ('section_questions','trg_section_questions_updated_at'),
+        ('company_brand_profiles','trg_company_brand_profiles_updated_at'),
+        ('advanced_proposals','trg_advanced_proposals_updated_at'),
+        ('proposal_section_answers','trg_proposal_section_answers_updated_at')
+    ) AS t(_tbl, _trg)
+  LOOP
+    IF _tbl IS NULL OR _trg IS NULL THEN
+      RAISE EXCEPTION 'Trigger loop got NULL: tbl=%, trg=%', _tbl, _trg;
+    END IF;
     EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.%I', _trg, _tbl);
     EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.set_updated_at()', _trg, _tbl);
   END LOOP;
