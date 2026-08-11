@@ -248,36 +248,35 @@ BEGIN
   IF _cnt=7 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   _name := 'business_categories: 2 policies';
-  SELECT COUNT(*) INTO _cnt FROM pg_policies p JOIN pg_class c ON p.polrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='business_categories';
+  SELECT COUNT(*) INTO _cnt FROM pg_policies WHERE schemaname='public' AND tablename='business_categories';
   IF _cnt=2 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   _name := 'proposal_blueprints: 2 policies';
-  SELECT COUNT(*) INTO _cnt FROM pg_policies p JOIN pg_class c ON p.polrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='proposal_blueprints';
+  SELECT COUNT(*) INTO _cnt FROM pg_policies WHERE schemaname='public' AND tablename='proposal_blueprints';
   IF _cnt=2 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   _name := 'proposal_sections: 2 policies';
-  SELECT COUNT(*) INTO _cnt FROM pg_policies p JOIN pg_class c ON p.polrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='proposal_sections';
+  SELECT COUNT(*) INTO _cnt FROM pg_policies WHERE schemaname='public' AND tablename='proposal_sections';
   IF _cnt=2 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   _name := 'section_questions: 2 policies';
-  SELECT COUNT(*) INTO _cnt FROM pg_policies p JOIN pg_class c ON p.polrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='section_questions';
+  SELECT COUNT(*) INTO _cnt FROM pg_policies WHERE schemaname='public' AND tablename='section_questions';
   IF _cnt=2 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   _name := 'company_brand_profiles: 4 policies';
-  SELECT COUNT(*) INTO _cnt FROM pg_policies p JOIN pg_class c ON p.polrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='company_brand_profiles';
+  SELECT COUNT(*) INTO _cnt FROM pg_policies WHERE schemaname='public' AND tablename='company_brand_profiles';
   IF _cnt=4 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   _name := 'advanced_proposals: 4 policies';
-  SELECT COUNT(*) INTO _cnt FROM pg_policies p JOIN pg_class c ON p.polrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='advanced_proposals';
+  SELECT COUNT(*) INTO _cnt FROM pg_policies WHERE schemaname='public' AND tablename='advanced_proposals';
   IF _cnt=4 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   _name := 'proposal_section_answers: 4 policies';
-  SELECT COUNT(*) INTO _cnt FROM pg_policies p JOIN pg_class c ON p.polrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='public' AND c.relname='proposal_section_answers';
+  SELECT COUNT(*) INTO _cnt FROM pg_policies WHERE schemaname='public' AND tablename='proposal_section_answers';
   IF _cnt=4 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   _name := 'Total: 20 policies';
-  SELECT COUNT(*) INTO _cnt FROM pg_policies p JOIN pg_class c ON p.polrelid=c.oid JOIN pg_namespace n ON c.relnamespace=n.oid
-  WHERE n.nspname='public' AND c.relname IN ('business_categories','proposal_blueprints','proposal_sections','section_questions','company_brand_profiles','advanced_proposals','proposal_section_answers');
+  SELECT COUNT(*) INTO _cnt FROM pg_policies WHERE schemaname='public' AND tablename IN ('business_categories','proposal_blueprints','proposal_sections','section_questions','company_brand_profiles','advanced_proposals','proposal_section_answers');
   IF _cnt=20 THEN _pass:=_pass+1; RAISE NOTICE '[PASS] %', _name; ELSE _fail:=_fail+1; RAISE NOTICE '[FAIL] % (%)', _name, _cnt; END IF;
 
   -- ============================================================
