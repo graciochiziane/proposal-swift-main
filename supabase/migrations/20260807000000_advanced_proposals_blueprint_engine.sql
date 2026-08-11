@@ -1,19 +1,58 @@
 -- ============================================================
 -- ProposalJa — Advanced Proposals: Blueprint Engine
--- Assumes: organizations, organization_members, plan_tier,
---   user_belongs_to_org(), has_org_role_min_in_org() already exist.
--- Fixes: has_role() — redefined to query user_roles (not profiles.role).
+-- FULLY SELF-CONTAINED: recreates all RLS helper functions
+-- that the Supabase AI dropped, then creates blueprint tables.
 -- ============================================================
 
 BEGIN;
 
 -- ============================================================
--- 0. FIX: has_role() — queries user_roles table, NOT profiles.role
---     (profiles has no role column; user_roles has user_id + role)
+-- 0-A. has_role(uuid, text) → queries user_roles (NOT profiles.role)
+--      user_roles.role is enum app_role → cast to text for comparison
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.has_role(p_user_id UUID, p_role TEXT)
 RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$ SELECT EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = p_user_id AND ur.role::text = p_role); $$;
+
+-- ============================================================
+-- 0-B. user_role_in_org(uuid) → returns org_role enum
+--      Must exist BEFORE has_org_role_min_in_org
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.user_role_in_org(p_org_id UUID)
+RETURNS public.org_role
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT om.role::public.org_role FROM public.organization_members om
+  WHERE om.organization_id = p_org_id AND om.user_id = auth.uid() LIMIT 1;
+$$;
+
+-- ============================================================
+-- 0-C. user_belongs_to_org(uuid) → checks organization_members
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.user_belongs_to_org(p_org_id UUID)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.organization_members om
+    WHERE om.organization_id = p_org_id AND om.user_id = auth.uid()
+  );
+$$;
+
+-- ============================================================
+-- 0-D. has_org_role_min_in_org(uuid, org_role) → role hierarchy
+--      Depends on user_role_in_org (0-B)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.has_org_role_min_in_org(p_org_id UUID, p_min_role public.org_role)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT CASE public.user_role_in_org(p_org_id)
+    WHEN 'owner'::public.org_role  THEN true
+    WHEN 'admin'::public.org_role  THEN p_min_role IN ('admin'::public.org_role, 'member'::public.org_role, 'viewer'::public.org_role)
+    WHEN 'member'::public.org_role THEN p_min_role IN ('member'::public.org_role, 'viewer'::public.org_role)
+    WHEN 'viewer'::public.org_role THEN p_min_role = 'viewer'::public.org_role
+    ELSE false
+  END;
+$$;
 
 -- ============================================================
 -- 1. ENUM: visual_style (idempotent)
@@ -185,49 +224,51 @@ BEGIN
 END $$;
 
 -- ============================================================
--- 13. RLS POLICIES (idempotent, org-scoped)
+-- 13. RLS POLICIES (all idempotent)
+--      NOTE: has_org_role_min_in_org takes public.org_role,
+--      so literals must be cast: 'member'::public.org_role
 -- ============================================================
 
--- business_categories: readable by all authenticated, manageable by admins
+-- business_categories
 ALTER TABLE public.business_categories ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY bc_select_all ON public.business_categories FOR SELECT TO authenticated USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY bc_admin_manage ON public.business_categories FOR ALL TO authenticated USING (public.has_role(auth.uid(),'admin')) WITH CHECK (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- proposal_blueprints: readable by all authenticated, manageable by admins
+-- proposal_blueprints
 ALTER TABLE public.proposal_blueprints ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY pb_select_all ON public.proposal_blueprints FOR SELECT TO authenticated USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY pb_admin_manage ON public.proposal_blueprints FOR ALL TO authenticated USING (public.has_role(auth.uid(),'admin')) WITH CHECK (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- proposal_sections: readable by all authenticated, manageable by admins
+-- proposal_sections
 ALTER TABLE public.proposal_sections ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY ps_select_all ON public.proposal_sections FOR SELECT TO authenticated USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY ps_admin_manage ON public.proposal_sections FOR ALL TO authenticated USING (public.has_role(auth.uid(),'admin')) WITH CHECK (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- section_questions: readable by all authenticated, manageable by admins
+-- section_questions
 ALTER TABLE public.section_questions ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY sq_select_all ON public.section_questions FOR SELECT TO authenticated USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY sq_admin_manage ON public.section_questions FOR ALL TO authenticated USING (public.has_role(auth.uid(),'admin')) WITH CHECK (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- company_brand_profiles: org-scoped
+-- company_brand_profiles
 ALTER TABLE public.company_brand_profiles ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY cbp_select ON public.company_brand_profiles FOR SELECT TO authenticated USING (public.user_belongs_to_org(organization_id) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY cbp_insert ON public.company_brand_profiles FOR INSERT TO authenticated WITH CHECK (public.user_belongs_to_org(organization_id)); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY cbp_update ON public.company_brand_profiles FOR UPDATE TO authenticated USING (public.user_belongs_to_org(organization_id) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY cbp_delete ON public.company_brand_profiles FOR DELETE TO authenticated USING (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- advanced_proposals: org-scoped + owner fallback
+-- advanced_proposals
 ALTER TABLE public.advanced_proposals ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY advp_select ON public.advanced_proposals FOR SELECT TO authenticated USING (public.user_belongs_to_org(organization_id) OR owner_id = auth.uid() OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE POLICY advp_insert ON public.advanced_proposals FOR INSERT TO authenticated WITH CHECK ((public.user_belongs_to_org(organization_id) AND public.has_org_role_min_in_org(organization_id,'member')) OR (owner_id = auth.uid() AND NOT public.user_belongs_to_org(organization_id)) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY advp_insert ON public.advanced_proposals FOR INSERT TO authenticated WITH CHECK ((public.user_belongs_to_org(organization_id) AND public.has_org_role_min_in_org(organization_id, 'member'::public.org_role)) OR (owner_id = auth.uid() AND NOT public.user_belongs_to_org(organization_id)) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY advp_update ON public.advanced_proposals FOR UPDATE TO authenticated USING (public.user_belongs_to_org(organization_id) OR owner_id = auth.uid() OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE POLICY advp_delete ON public.advanced_proposals FOR DELETE TO authenticated USING ((public.user_belongs_to_org(organization_id) AND public.has_org_role_min_in_org(organization_id,'admin')) OR (owner_id = auth.uid() AND NOT public.user_belongs_to_org(organization_id)) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY advp_delete ON public.advanced_proposals FOR DELETE TO authenticated USING ((public.user_belongs_to_org(organization_id) AND public.has_org_role_min_in_org(organization_id, 'admin'::public.org_role)) OR (owner_id = auth.uid() AND NOT public.user_belongs_to_org(organization_id)) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- proposal_section_answers: inherits access from parent advanced_proposal
+-- proposal_section_answers
 ALTER TABLE public.proposal_section_answers ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY psa_select ON public.proposal_section_answers FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND (public.user_belongs_to_org(ap.organization_id) OR ap.owner_id = auth.uid() OR public.has_role(auth.uid(),'admin')))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY psa_insert ON public.proposal_section_answers FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND (public.user_belongs_to_org(ap.organization_id) OR ap.owner_id = auth.uid()))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY psa_update ON public.proposal_section_answers FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND (public.user_belongs_to_org(ap.organization_id) OR ap.owner_id = auth.uid() OR public.has_role(auth.uid(),'admin')))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE POLICY psa_delete ON public.proposal_section_answers FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND ((public.user_belongs_to_org(ap.organization_id) AND public.has_org_role_min_in_org(organization_id,'admin')) OR public.has_role(auth.uid(),'admin')))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY psa_delete ON public.proposal_section_answers FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND (public.user_belongs_to_org(ap.organization_id) AND public.has_org_role_min_in_org(ap.organization_id, 'admin'::public.org_role)) OR public.has_role(auth.uid(),'admin'))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================
 -- 14. SEED: Categories
