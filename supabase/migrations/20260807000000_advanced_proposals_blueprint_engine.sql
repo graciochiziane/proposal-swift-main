@@ -1,89 +1,14 @@
 -- ============================================================
--- ProposalJa — Advanced Proposals: Blueprint Engine (SELF-CONTAINED)
--- Creates its own dependencies if missing: organizations, plan_tier,
--- organization_members, and all RLS helper functions.
+-- ProposalJa — Advanced Proposals: Blueprint Engine
+-- Assumes: organizations, organization_members, plan_tier,
+--   has_role(), user_belongs_to_org(), has_org_role_min_in_org()
+--   already exist in the database.
 -- ============================================================
 
 BEGIN;
 
 -- ============================================================
--- 0-A. DEPENDENCY: plan_tier enum
--- ============================================================
-DO $$ BEGIN
-  CREATE TYPE public.plan_tier AS ENUM ('free', 'pro', 'enterprise');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
--- ============================================================
--- 0-B. DEPENDENCY: organizations table (minimal, IF NOT EXISTS)
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.organizations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  nome TEXT NOT NULL,
-  slug TEXT UNIQUE NOT NULL,
-  logo_url TEXT DEFAULT '',
-  cor_primaria TEXT DEFAULT '#0B5394',
-  plano public.plan_tier NOT NULL DEFAULT 'free',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- ============================================================
--- 0-C. DEPENDENCY: organization_members (needed by RLS helpers)
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.organization_members (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role TEXT NOT NULL DEFAULT 'member',
-  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  invited_by UUID REFERENCES auth.users(id),
-  UNIQUE (organization_id, user_id)
-);
-
--- ============================================================
--- 0-D. DEPENDENCY: RLS helper functions (safe stubs)
--- ============================================================
-CREATE OR REPLACE FUNCTION public.has_role(p_user_id UUID, p_role TEXT)
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = p_user_id AND p.role::text = p_role); $$;
-
-CREATE OR REPLACE FUNCTION public.user_org_id(p_user_id UUID)
-RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT p.organization_id FROM public.profiles p WHERE p.id = p_user_id LIMIT 1; $$;
-
-CREATE OR REPLACE FUNCTION public.user_role_in_org(p_org_id UUID)
-RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT om.role FROM public.organization_members om WHERE om.organization_id = p_org_id AND om.user_id = auth.uid() LIMIT 1; $$;
-
-CREATE OR REPLACE FUNCTION public.user_belongs_to_org(p_org_id UUID)
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$
-  SELECT EXISTS (SELECT 1 FROM public.organization_members om WHERE om.organization_id = p_org_id AND om.user_id = auth.uid())
-  OR (SELECT p.organization_id = p_org_id FROM public.profiles p WHERE p.id = auth.uid());
-$$;
-
-CREATE OR REPLACE FUNCTION public.has_org_role_min_in_org(p_org_id UUID, p_min_role TEXT)
-RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$
-  SELECT CASE user_role_in_org(p_org_id)
-    WHEN 'owner'  THEN true
-    WHEN 'admin'  THEN p_min_role IN ('admin','member','viewer')
-    WHEN 'member' THEN p_min_role IN ('member','viewer')
-    WHEN 'viewer' THEN p_min_role = 'viewer'
-    ELSE false
-  END;
-$$;
-
--- ============================================================
--- 0-E. TRIGGER FUNCTION: set_updated_at (hardened)
--- ============================================================
-CREATE OR REPLACE FUNCTION public.set_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
-AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
-
--- ============================================================
--- 1. ENUM: visual_style
+-- 1. ENUM: visual_style (idempotent)
 -- ============================================================
 DO $$ BEGIN
   CREATE TYPE public.visual_style AS ENUM ('corporate','premium','minimal','technical');
@@ -91,7 +16,17 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 -- ============================================================
--- 2. business_categories
+-- 2. TRIGGER FUNCTION: set_updated_at (only if missing)
+-- ============================================================
+DO $$ BEGIN
+  CREATE FUNCTION public.set_updated_at()
+  RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+  AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
+EXCEPTION WHEN duplicate_function THEN NULL;
+END $$;
+
+-- ============================================================
+-- 3. business_categories
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.business_categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -103,7 +38,7 @@ CREATE TABLE IF NOT EXISTS public.business_categories (
 );
 
 -- ============================================================
--- 3. proposal_blueprints
+-- 4. proposal_blueprints
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.proposal_blueprints (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -118,7 +53,7 @@ CREATE TABLE IF NOT EXISTS public.proposal_blueprints (
 );
 
 -- ============================================================
--- 4. proposal_sections
+-- 5. proposal_sections
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.proposal_sections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -131,7 +66,7 @@ CREATE TABLE IF NOT EXISTS public.proposal_sections (
 );
 
 -- ============================================================
--- 5. section_questions (column: placeholder, NOT help_text)
+-- 6. section_questions
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.section_questions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -145,7 +80,7 @@ CREATE TABLE IF NOT EXISTS public.section_questions (
 );
 
 -- ============================================================
--- 6. company_brand_profiles
+-- 7. company_brand_profiles
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.company_brand_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -159,7 +94,7 @@ CREATE TABLE IF NOT EXISTS public.company_brand_profiles (
 );
 
 -- ============================================================
--- 7. advanced_proposals
+-- 8. advanced_proposals
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.advanced_proposals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -177,7 +112,7 @@ CREATE TABLE IF NOT EXISTS public.advanced_proposals (
 );
 
 -- ============================================================
--- 8. proposal_section_answers
+-- 9. proposal_section_answers
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.proposal_section_answers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -197,7 +132,7 @@ CREATE TABLE IF NOT EXISTS public.proposal_section_answers (
 );
 
 -- ============================================================
--- 9. ALTER proposals (non-destructive, wrapped for safety)
+-- 10. ALTER proposals (add blueprint_id, non-destructive)
 -- ============================================================
 DO $$ BEGIN
   ALTER TABLE public.proposals ADD COLUMN IF NOT EXISTS blueprint_id UUID
@@ -206,7 +141,7 @@ EXCEPTION WHEN undefined_table THEN NULL;
 END $$;
 
 -- ============================================================
--- 10. INDEXES
+-- 11. INDEXES
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_business_categories_active ON public.business_categories(active, sort_order);
 CREATE INDEX IF NOT EXISTS idx_blueprints_category ON public.proposal_blueprints(business_category_id) WHERE active = true;
@@ -219,11 +154,11 @@ CREATE INDEX IF NOT EXISTS idx_section_answers_proposal ON public.proposal_secti
 CREATE INDEX IF NOT EXISTS idx_section_answers_status ON public.proposal_section_answers(content_status);
 DO $$ BEGIN
   CREATE INDEX IF NOT EXISTS idx_proposals_blueprint_id ON public.proposals(blueprint_id) WHERE blueprint_id IS NOT NULL;
-EXCEPTION WHEN undefined_table THEN NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
 
 -- ============================================================
--- 11. TRIGGERS (idempotent loop)
+-- 12. TRIGGERS (idempotent drop+create loop)
 -- ============================================================
 DO $$ DECLARE _tbl text; _trg text;
 BEGIN
@@ -242,44 +177,52 @@ BEGIN
 END $$;
 
 -- ============================================================
--- 12. RLS POLICIES (all idempotent)
+-- 13. RLS POLICIES (idempotent, org-scoped)
 -- ============================================================
+
+-- business_categories: readable by all authenticated, manageable by admins
 ALTER TABLE public.business_categories ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY bc_select_all ON public.business_categories FOR SELECT TO authenticated USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY bc_admin_manage ON public.business_categories FOR ALL TO authenticated USING (public.has_role(auth.uid(),'admin')) WITH CHECK (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- proposal_blueprints: readable by all authenticated, manageable by admins
 ALTER TABLE public.proposal_blueprints ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY pb_select_all ON public.proposal_blueprints FOR SELECT TO authenticated USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY pb_admin_manage ON public.proposal_blueprints FOR ALL TO authenticated USING (public.has_role(auth.uid(),'admin')) WITH CHECK (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- proposal_sections: readable by all authenticated, manageable by admins
 ALTER TABLE public.proposal_sections ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY ps_select_all ON public.proposal_sections FOR SELECT TO authenticated USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY ps_admin_manage ON public.proposal_sections FOR ALL TO authenticated USING (public.has_role(auth.uid(),'admin')) WITH CHECK (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- section_questions: readable by all authenticated, manageable by admins
 ALTER TABLE public.section_questions ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY sq_select_all ON public.section_questions FOR SELECT TO authenticated USING (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY sq_admin_manage ON public.section_questions FOR ALL TO authenticated USING (public.has_role(auth.uid(),'admin')) WITH CHECK (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- company_brand_profiles: org-scoped
 ALTER TABLE public.company_brand_profiles ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY cbp_select ON public.company_brand_profiles FOR SELECT TO authenticated USING (public.user_belongs_to_org(organization_id) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY cbp_insert ON public.company_brand_profiles FOR INSERT TO authenticated WITH CHECK (public.user_belongs_to_org(organization_id)); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY cbp_update ON public.company_brand_profiles FOR UPDATE TO authenticated USING (public.user_belongs_to_org(organization_id) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY cbp_delete ON public.company_brand_profiles FOR DELETE TO authenticated USING (public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- advanced_proposals: org-scoped + owner fallback
 ALTER TABLE public.advanced_proposals ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY advp_select ON public.advanced_proposals FOR SELECT TO authenticated USING (public.user_belongs_to_org(organization_id) OR owner_id = auth.uid() OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY advp_insert ON public.advanced_proposals FOR INSERT TO authenticated WITH CHECK ((public.user_belongs_to_org(organization_id) AND public.has_org_role_min_in_org(organization_id,'member')) OR (owner_id = auth.uid() AND NOT public.user_belongs_to_org(organization_id)) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY advp_update ON public.advanced_proposals FOR UPDATE TO authenticated USING (public.user_belongs_to_org(organization_id) OR owner_id = auth.uid() OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY advp_delete ON public.advanced_proposals FOR DELETE TO authenticated USING ((public.user_belongs_to_org(organization_id) AND public.has_org_role_min_in_org(organization_id,'admin')) OR (owner_id = auth.uid() AND NOT public.user_belongs_to_org(organization_id)) OR public.has_role(auth.uid(),'admin')); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- proposal_section_answers: inherits access from parent advanced_proposal
 ALTER TABLE public.proposal_section_answers ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN CREATE POLICY psa_select ON public.proposal_section_answers FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND (public.user_belongs_to_org(ap.organization_id) OR ap.owner_id = auth.uid() OR public.has_role(auth.uid(),'admin')))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY psa_insert ON public.proposal_section_answers FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND (public.user_belongs_to_org(ap.organization_id) OR ap.owner_id = auth.uid()))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE POLICY psa_update ON public.proposal_section_answers FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND (public.user_belongs_to_org(ap.organization_id) OR ap.owner_id = auth.uid() OR public.has_role(auth.uid(),'admin')))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE POLICY psa_delete ON public.proposal_section_answers FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND ((public.user_belongs_to_org(ap.organization_id) AND public.has_org_role_min_in_org(ap.organization_id,'admin')) OR public.has_role(auth.uid(),'admin')))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE POLICY psa_delete ON public.proposal_section_answers FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM public.advanced_proposals ap WHERE ap.id = advanced_proposal_id AND ((public.user_belongs_to_org(ap.organization_id) AND public.has_org_role_min_in_org(organization_id,'admin')) OR public.has_role(auth.uid(),'admin')))); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================
--- 13. SEED: Categories
+-- 14. SEED: Categories
 -- ============================================================
 INSERT INTO public.business_categories (id,name,description,slug,icon,sort_order,active) VALUES
   ('a0000000-0001-0000-0000-000000000001','Tecnologia da Informacao','Solucoes de software, hardware, cloud, infraestrutura IT e servicos digitais para empresas.','tecnologia','Monitor',1,true),
@@ -288,7 +231,7 @@ INSERT INTO public.business_categories (id,name,description,slug,icon,sort_order
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- 14. SEED: Blueprints
+-- 15. SEED: Blueprints
 -- ============================================================
 INSERT INTO public.proposal_blueprints (id,name,description,business_category_id,version,is_default,active,estimated_pages) VALUES
   ('b0000000-0001-0000-0000-000000000001','Proposta de Software sob Medida','Estrutura completa para propor solucoes de software personalizado: analise, desenvolvimento, implementacao e suporte.','a0000000-0001-0000-0000-000000000001',1,true,true,12),
@@ -297,7 +240,7 @@ INSERT INTO public.proposal_blueprints (id,name,description,business_category_id
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- 15. SEED: Sections — Software (6)
+-- 16. SEED: Sections — Software (6)
 -- ============================================================
 INSERT INTO public.proposal_sections (id,blueprint_id,type,title,"order",required,content_rules) VALUES
   ('c1000000-0001-0000-0000-000000000001','b0000000-0001-0000-0000-000000000001','narrative','1. Contexto e Diagnostico',1,true,'{"minWords":120,"maxWords":300,"tone":"formal","requiresData":true,"allowsBullets":true,"allowsTable":false,"promptHint":"Descreva o contexto actual do cliente e as dores identificadas."}'),
@@ -309,7 +252,7 @@ INSERT INTO public.proposal_sections (id,blueprint_id,type,title,"order",require
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- 16. SEED: Sections — Consultoria (4)
+-- 17. SEED: Sections — Consultoria (4)
 -- ============================================================
 INSERT INTO public.proposal_sections (id,blueprint_id,type,title,"order",required,content_rules) VALUES
   ('c2000000-0001-0000-0000-000000000001','b0000000-0001-0000-0000-000000000002','narrative','1. Analise da Situacao Actual',1,true,'{"minWords":150,"maxWords":350,"tone":"consultivo","requiresData":true,"allowsBullets":true,"allowsTable":false,"promptHint":"Analise a situacao actual da organizacao."}'),
@@ -319,7 +262,7 @@ INSERT INTO public.proposal_sections (id,blueprint_id,type,title,"order",require
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- 17. SEED: Sections — Construcao (5)
+-- 18. SEED: Sections — Construcao (5)
 -- ============================================================
 INSERT INTO public.proposal_sections (id,blueprint_id,type,title,"order",required,content_rules) VALUES
   ('c3000000-0001-0000-0000-000000000001','b0000000-0001-0000-0000-000000000003','narrative','1. Memoria Descritivo da Obra',1,true,'{"minWords":150,"maxWords":400,"tone":"technical","requiresData":true,"allowsBullets":true,"allowsTable":false,"promptHint":"Descreva a obra: localizacao, tipologia, area, materiais."}'),
@@ -330,7 +273,7 @@ INSERT INTO public.proposal_sections (id,blueprint_id,type,title,"order",require
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- 18. SEED: Questions — Software (placeholder, NOT help_text)
+-- 19. SEED: Questions — Software
 -- ============================================================
 INSERT INTO public.section_questions (id,section_id,question_text,placeholder,"order",required,question_type,visibility_rules) VALUES
   ('d1000000-0001-0000-0000-000000000001','c1000000-0001-0000-0000-000000000001','Qual e o principal desafio ou dor que o cliente enfrenta actualmente?','Seja especifico: problemas de eficiencia, custos, escalabilidade, etc.',1,true,'textarea','{}'),
@@ -351,7 +294,7 @@ INSERT INTO public.section_questions (id,section_id,question_text,placeholder,"o
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- 19. SEED: Questions — Consultoria
+-- 20. SEED: Questions — Consultoria
 -- ============================================================
 INSERT INTO public.section_questions (id,section_id,question_text,placeholder,"order",required,question_type,visibility_rules) VALUES
   ('d2000000-0001-0000-0000-000000000001','c2000000-0001-0000-0000-000000000001','Qual e a area de consultoria pretendida?','Ex: estrategia, financeira, RH, operacoes...',1,true,'text','{}'),
@@ -365,7 +308,7 @@ INSERT INTO public.section_questions (id,section_id,question_text,placeholder,"o
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- 20. SEED: Questions — Construcao
+-- 21. SEED: Questions — Construcao
 -- ============================================================
 INSERT INTO public.section_questions (id,section_id,question_text,placeholder,"order",required,question_type,visibility_rules) VALUES
   ('d3000000-0001-0000-0000-000000000001','c3000000-0001-0000-0000-000000000001','Descreva a obra (tipo, localizacao, area aproximada)','Ex: Construcao de edificio de escritorios, 3 andares, 500m2, Maputo.',1,true,'textarea','{}'),
@@ -382,7 +325,7 @@ INSERT INTO public.section_questions (id,section_id,question_text,placeholder,"o
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
--- VERIFICACAO
+-- VERIFICATION
 -- ============================================================
 DO $$ DECLARE v_bc INT; v_bp INT; v_ps INT; v_sq INT;
 BEGIN
@@ -391,10 +334,8 @@ BEGIN
   SELECT COUNT(*) INTO v_ps FROM public.proposal_sections;
   SELECT COUNT(*) INTO v_sq FROM public.section_questions;
   RAISE NOTICE '========================================';
-  RAISE NOTICE 'MIGRACAO AUTO-SUFICIENTE CONCLUIDA';
+  RAISE NOTICE 'BLUEPRINT ENGINE MIGRATION COMPLETE';
   RAISE NOTICE '========================================';
-  RAISE NOTICE 'organizations: %', (SELECT COUNT(*) FROM public.organizations);
-  RAISE NOTICE 'organization_members: %', (SELECT COUNT(*) FROM public.organization_members);
   RAISE NOTICE 'business_categories: %', v_bc;
   RAISE NOTICE 'proposal_blueprints: %', v_bp;
   RAISE NOTICE 'proposal_sections: %', v_ps;
