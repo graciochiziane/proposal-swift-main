@@ -25,6 +25,7 @@ import {
   buildProposalDocument,
   openPdfPreview,
   getProposalHtmlBlob,
+  exportProposalPdf,
   type ProposalDocument,
 } from '@/lib/advanced';
 import { useAuth } from '@/hooks/useAuth';
@@ -53,6 +54,9 @@ export default function RevisaoProposta() {
   // Edit state
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+
+  // PDF export state
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Load all data
   useEffect(() => {
@@ -274,7 +278,33 @@ export default function RevisaoProposta() {
     openPdfPreview(doc);
   };
 
-  // Download as HTML file (can be opened in browser and printed to PDF)
+  // Export as native PDF file
+  const handleExportPdf = async () => {
+    if (!proposal || !blueprint) return;
+    setExportingPdf(true);
+    try {
+      const doc = buildProposalDocument({
+        proposalId: proposal.id,
+        proposalTitle: proposal.title,
+        blueprint,
+        answers,
+        brandProfile,
+        companyInfo: getCompanyInfo(),
+        clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
+      });
+      await exportProposalPdf(doc);
+      toast.success('PDF exportado com sucesso!');
+      // Update proposal status to 'exportada'
+      await updateAdvancedProposalStatus(proposal.id, 'exportada');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      toast.error('Erro ao gerar PDF. Tente usar Pre-visualizar > Imprimir.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  // Download as HTML file (fallback)
   const handleDownloadHtml = () => {
     if (!proposal || !blueprint) return;
     const doc = buildProposalDocument({
@@ -359,10 +389,10 @@ export default function RevisaoProposta() {
             <Eye className="h-4 w-4" />
             Pre-visualizar
           </button>
-          <button onClick={handleDownloadHtml} disabled={generating}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border hover:bg-muted text-sm disabled:opacity-50">
-            <Download className="h-4 w-4" />
-            Exportar
+          <button onClick={handleExportPdf} disabled={generating || exportingPdf}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm disabled:opacity-50">
+            {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {exportingPdf ? 'A gerar PDF...' : 'Exportar PDF'}
           </button>
           <button onClick={handleMarkReviewed} disabled={generating}
             className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm disabled:opacity-50">
