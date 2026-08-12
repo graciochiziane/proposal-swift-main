@@ -17,6 +17,10 @@ import GerarPropostaIA from "@/pages/GerarPropostaIA";
 import Configuracoes from "@/pages/Configuracoes";
 import Organizacao from "@/pages/Organizacao";
 import Admin from "@/pages/Admin";
+import NovaPropostaAvancada from "@/pages/advanced/NovaPropostaAvancada";
+import PreencherProposta from "@/pages/advanced/PreencherProposta";
+import RevisaoProposta from "@/pages/advanced/RevisaoProposta";
+import BrandProfilePage from "@/pages/advanced/BrandProfilePage";
 import Auth from "@/pages/Auth";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
@@ -60,6 +64,11 @@ const App = () => (
                       <Route path="/organizacao" element={<Organizacao />} />
                       <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />
                       <Route path="/admin" element={<Admin />} />
+                      {/* Advanced Proposals */}
+                      <Route path="/proposta-avancada/nova" element={<NovaPropostaAvancada />} />
+                      <Route path="/proposta-avancada/:id" element={<PreencherProposta />} />
+                      <Route path="/revisao-proposta/:id" element={<RevisaoProposta />} />
+                      <Route path="/brand-profile" element={<BrandProfilePage />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </AppLayout>
