@@ -62,12 +62,18 @@ function daysAgo(n: number): Date {
  * Verifies that the current user is authenticated and has platform admin role.
  * Used by all read methods in this service (they expose platform-wide PII).
  * Defense in depth alongside RLS and SECURITY DEFINER functions.
+ *
+ * Uses getSession() (synchronous, reads from localStorage) instead of
+ * getUser() (which makes a network call). The JWT is still validated by
+ * RLS when queries reach the database.
  */
 async function requireAdmin(): Promise<void> {
-  const { data: { user }, error: authErr } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+  if (sessionErr || !session?.user) {
     throw new Error('Não autenticado');
   }
+
+  const user = session.user;
 
   const { data: roleRow, error: roleErr } = await supabase
     .from('user_roles')

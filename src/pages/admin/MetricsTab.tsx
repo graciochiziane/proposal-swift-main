@@ -31,7 +31,28 @@ export function MetricsTab({ activeTab }: { activeTab: string }) {
     );
   }
 
-  if (!metrics) return null;
+  // P1-H5/H6 fix: show error state instead of blank page when metrics fail to load
+  // (e.g., network issue, role check failure, RPC error)
+  if (!metrics) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center space-y-4">
+          <div className="text-muted-foreground">
+            <RefreshCw className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p className="font-medium">Não foi possível carregar as métricas</p>
+            <p className="text-sm mt-1">
+              Verifique a sua ligação e tente novamente. Se o problema persistir,
+              confirme que tem permissões de administrador.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={refresh} className="gap-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Tentar novamente
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
