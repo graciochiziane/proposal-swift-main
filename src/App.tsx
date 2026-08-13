@@ -64,18 +64,9 @@ const App = () => (
                       <Route path="/proposta/:id/gerar-ia" element={<GerarPropostaIA />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/organizacao" element={<Organizacao />} />
-                      {/* P1-H11: Admin routes wrapped with role guard */}
-                      <Route
-                        path="/admin/*"
-                        element={
-                          <ProtectedRoute roles={['admin']} fallbackPath="/">
-                            <Routes>
-                              <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />
-                              <Route path="/admin" element={<Admin />} />
-                            </Routes>
-                          </ProtectedRoute>
-                        }
-                      />
+                      {/* Admin routes — ProtectedRoute handles auth, Admin.tsx handles role check */}
+                      <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />
+                      <Route path="/admin" element={<Admin />} />
                       {/* Advanced Proposals */}
                       <Route path="/proposta-avancada/nova" element={<NovaPropostaAvancada />} />
                       <Route path="/proposta-avancada/:id" element={<PreencherProposta />} />
