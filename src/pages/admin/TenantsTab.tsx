@@ -2,19 +2,22 @@
 // TenantsTab — Tenant listing, search, sort, IA alert
 // Extracted from Admin.tsx lines 924-1027
 // ============================================================
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, ArrowUpDown, Plus, Layers, AlertTriangle, Building2 } from 'lucide-react';
+import { Search, ArrowUpDown, Plus, Layers, AlertTriangle, Building2, Sparkles } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAdminTenants } from './hooks/useAdminTenants';
 import { planBadge } from './constants';
 import { PlanLimitsDialog } from './PlanLimitsDialog';
+import { PlanFeaturesDialog } from './PlanFeaturesDialog';
 import { CreateTenantDialog } from './CreateTenantDialog';
 
 export function TenantsTab() {
   const navigate = useNavigate();
+  const [showPlanFeatures, setShowPlanFeatures] = useState(false);
   const {
     loading, tenantSearch, setTenantSearch,
     showIaAlert, setShowIaAlert, tenantSort, setTenantSort,
@@ -79,6 +82,9 @@ export function TenantsTab() {
               <Button variant="outline" size="sm" onClick={() => setShowPlanLimits(true)} className="gap-1">
                 <Layers className="h-3.5 w-3.5" /> Planos
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowPlanFeatures(true)} className="gap-1">
+                <Sparkles className="h-3.5 w-3.5" /> Features
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -139,6 +145,7 @@ export function TenantsTab() {
         onSubmit={handleCreateTenant}
       />
       <PlanLimitsDialog open={showPlanLimits} onOpenChange={setShowPlanLimits} />
+      <PlanFeaturesDialog open={showPlanFeatures} onOpenChange={setShowPlanFeatures} />
     </div>
   );
 }
