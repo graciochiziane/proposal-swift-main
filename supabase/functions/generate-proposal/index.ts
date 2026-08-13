@@ -8,6 +8,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { validateGeminiModel } from "../_shared/gemini.ts";
 
 // Helper: retorna 200 com { error, step } para que o frontend receba os detalhes
 // (Supabase functions.invoke perde o body em respostas non-2xx)
@@ -117,7 +118,8 @@ Deno.serve(async (req) => {
     }
 
     const { cotacaoId, fields, tone = "formal", mode = "rapido", sector, model: bodyModel } = body;
-    const model = bodyModel || "gemini-3.1-flash-lite";
+    // P1-H9: Validate model against allowlist (prevents cost injection)
+    const model = validateGeminiModel(bodyModel);
 
     if (!cotacaoId || !fields) {
       console.error("[STEP-FAIL] PARSE: cotacaoId ou fields em falta", { cotacaoId, hasFields: !!fields });

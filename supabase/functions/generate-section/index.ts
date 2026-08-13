@@ -8,6 +8,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { validateGeminiModel } from "../_shared/gemini.ts";
 
 const TONE_MAP: Record<string, string> = {
   formal: `
@@ -83,8 +84,10 @@ Deno.serve(async (req) => {
       companyInfo,
       clientInfo,
       previousSections = [],
-      model = "gemini-2.5-flash",
+      model: bodyModel,
     } = body;
+    // P1-H9: Validate model against allowlist (prevents cost injection)
+    const model = validateGeminiModel(bodyModel);
 
     if (!sectionId || !sectionTitle || !questions || !answers) {
       return new Response(
