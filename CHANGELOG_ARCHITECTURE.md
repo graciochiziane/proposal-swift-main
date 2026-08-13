@@ -207,6 +207,115 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-13] — Plan Features System + Propostas Avançadas Tab + Admin UI
+
+**Tipo:** feat (new functionality)
+**Branch:** `feature/multi-user-hierarchy` (merge P0+P1 + new features)
+**HEAD:** `552f729`
+**Autor:** Agente IA (skill: `proposaja-engineering`)
+
+#### Sumário
+
+- Merge dos 19 fixes P0+P1 (7 critical + 12 high) neste branch
+- Novo sistema modular de features por plano (`plan_features` table)
+- Nova aba "Propostas Avançadas" na sidebar + página de listagem
+- Nova UI de super admin para gerir features por plano
+- 4 commits de feature + 1 merge commit
+
+#### Funcionalidades Implementadas
+
+**1. Plan Features System (migration + RPCs):**
+
+| Componente | Descrição |
+|---|---|
+| `plan_features` table | Pares (plano, feature_key) com `enabled` + `limit_value` |
+| `has_plan_feature(plano, key)` | Helper SQL → BOOLEAN |
+| `get_plan_feature_limit(plano, key)` | Helper SQL → INTEGER (NULL = ilimitado) |
+| `get_plan_features(plano)` | RPC para frontend → TABLE |
+| `upsert_plan_feature(plano, key, enabled, limit)` | RPC para admin (REVOKE'd de anon) |
+
+Seed inicial: 5 features × 3 planos = 15 rows
+- `advanced_proposals`: enabled para todos (gate será activado quando lançar planos comerciais)
+- `custom_branding`: free=false, pro/business=true
+- `multi_user`: free=3, pro=10, business=ilimitado
+- `api_access`: apenas business
+- `pdf_export`: todos
+
+**2. Hook `usePlanFeatures`:**
+- `hasFeature(key)` → boolean
+- `getFeatureLimit(key)` → number | null
+- Cache por organização, recarrega em org switch
+
+**3. Página `PropostasAvancadas.tsx` (nova):**
+- Lista `advanced_proposals` da organização actual
+- Estados: loading, empty, error, success (princípio 26)
+- Status badges (rascunho, em_preenchimento, em_revisao, concluida, exportada)
+- Progress bar para propostas incompletas
+- Delete com confirmação
+- Botão "Nova Proposta" (gated por `hasFeature('advanced_proposals')`)
+- Empty state com CTA
+
+**4. Sidebar + Rota:**
+- Novo item "Propostas Avançadas" com ícone Sparkles
+- Visível para todos os utilizadores (gate por plano será activado depois)
+- Rota `/propostas-avancadas` em App.tsx
+
+**5. Super Admin UI (`PlanFeaturesDialog`):**
+- Botão "Features" ao lado de "Planos" em Admin → Tenants
+- Grid: features × planos (free/pro/business)
+- Toggle on/off via Switch
+- Input de limite (vazio = ilimitado)
+- Adicionar nova feature (cria para os 3 planos, desactivada)
+- Eliminar feature (remove de todos os planos)
+- Updates optimistas com rollback em erro
+- Toasts de sucesso/erro
+
+#### Ficheiros Criados
+
+- `supabase/migrations/20260813150000_plan_features_system.sql` — Migration
+- `src/hooks/usePlanFeatures.ts` — Hook para frontend
+- `src/pages/PropostasAvancadas.tsx` — Página de listagem
+- `src/pages/admin/PlanFeaturesDialog.tsx` — UI de super admin
+
+#### Ficheiros Alterados
+
+- `src/components/AppLayout.tsx` — adicionado item na sidebar
+- `src/App.tsx` — adicionada rota `/propostas-avancadas`
+- `src/pages/admin/TenantsTab.tsx` — adicionado botão "Features" + dialog
+
+#### Database
+
+Migration `20260813150000_plan_features_system.sql` aplicada ao vivo:
+- Nova tabela `plan_features` (15 rows seeded)
+- 4 novas funções SQL (todas SECURITY DEFINER)
+- RLS: read para authenticated, write para admin apenas
+- `upsert_plan_feature` REVOKE'd de PUBLIC/anon
+
+#### Testes
+
+- Typecheck: `tsc --noEmit` — ✅ passa
+- Lint: `eslint .` — 70 erros pré-existentes
+- Build: `vite build` — ✅ 11.63s
+- Bundle scan: `grep "AIzaSy\|OperaOmnia\|sbp_8a741\|ghp_TXBO" dist/assets/*.js` — ✅ zero matches
+- Verificações ao vivo: `has_plan_feature`, `get_plan_feature_limit`, `get_plan_features` — todas OK
+
+#### Breaking Changes
+
+Nenhum — todas as funcionalidades são aditivas.
+
+#### Pendências
+
+1. **Deploy para staging:** Vercel auto-deploy do branch `staging` (que precisa de ser actualizado para apontar para `feature/multi-user-hierarchy` ou merged)
+2. **Deploy das Edge Functions:** `supabase functions deploy generate-proposal`, `generate-section`, `send-invite-email`
+3. **Gate por plano comercial:** Quando lançar planos comerciais, actualizar seeds em `plan_features` para reflectir os tiers reais
+4. **Rotação de credenciais:** Continua pendente (ver `download/P0_C7_CREDENCIAIS_ROTACAO.md`)
+
+#### ADRs Relacionados
+
+- ADR-007 (novo): Plan Features System — abordagem modular em vez de colunas avulsas em `plan_limits`
+
+---
+
 ### [2026-08-13] — P1 Security High Fixes (12/12 high findings corrigidos)
 
 **Tipo:** security + fix
