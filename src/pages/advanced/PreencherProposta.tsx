@@ -177,7 +177,7 @@ export default function PreencherProposta() {
 
       await updateAdvancedProposalStatus(proposal.id, 'em_revisao');
       toast.success('Secções preenchidas! Prossiga para revisao e geracao IA.');
-      navigate(`/proposta-avancada/${proposal.id}/revisao`);
+      navigate(`/revisao-proposta/${proposal.id}`);
     } catch {
       toast.error('Erro ao finalizar secções');
     } finally {
