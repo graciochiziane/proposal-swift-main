@@ -2,6 +2,11 @@
 // Proposal Document Model
 // Abstracao que transforma Blueprint + Answers + AI Content
 // num documento estruturado pronto para renderizacao
+//
+// P0-C5 (2026-08-13): Added escapeHtml to prevent stored XSS
+//   AI-generated content may contain markdown that, when converted
+//   to HTML, could include <script> tags or onerror handlers.
+//   All text is now HTML-escaped BEFORE markdown processing.
 // ============================================================
 
 import type {
@@ -177,9 +182,27 @@ function countWords(text: string): number {
 
 // --- Markdown to HTML ---
 
+/**
+ * Escapes HTML special characters to prevent XSS.
+ * Applied to all AI-generated content before markdown processing.
+ * Markdown syntax characters (* _ ` [ ] # - |) are NOT escaped,
+ * only HTML-breaking characters (& < > ").
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export function markdownToHtml(md: string): string {
   if (!md) return '';
-  let html = convertTables(md);
+  // P0-C5: Escape HTML before markdown processing to prevent XSS.
+  // Markdown syntax chars are preserved; only HTML special chars are escaped.
+  // This means <script>alert(1)</script> in AI output becomes
+  // &lt;script&gt;alert(1)&lt;/script&gt; which renders as text, not as HTML.
+  let html = convertTables(escapeHtml(md));
   const lines = html.split('\n');
   const result: string[] = [];
   let inUl = false;
