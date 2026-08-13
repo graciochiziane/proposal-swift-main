@@ -8,6 +8,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getCorsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { validateGeminiModel } from "../_shared/gemini.ts";
 
 // Helper: retorna 200 com { error, step } para que o frontend receba os detalhes
 // (Supabase functions.invoke perde o body em respostas non-2xx)
@@ -117,7 +118,8 @@ Deno.serve(async (req) => {
     }
 
     const { cotacaoId, fields, tone = "formal", mode = "rapido", sector, model: bodyModel } = body;
-    const model = bodyModel || "gemini-3.1-flash-lite";
+    // P1-H9: Validate model against allowlist (prevents cost injection)
+    const model = validateGeminiModel(bodyModel);
 
     if (!cotacaoId || !fields) {
       console.error("[STEP-FAIL] PARSE: cotacaoId ou fields em falta", { cotacaoId, hasFields: !!fields });
@@ -467,9 +469,17 @@ Gere a proposta seguindo as seccoes especificadas.`;
     );
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    // P1-H10: Stack traces are logged server-side only (not leaked to client)
     const errStack = err instanceof Error ? err.stack || "" : "";
     console.error(`[FATAL] logContext=${logContext}`, errMsg);
     console.error(`[FATAL] stack:`, errStack);
-    return errorResponse("Erro interno do servidor: " + errMsg, logContext, corsHeaders, { detail: errMsg, stack: errStack.split("\n").slice(0, 5).join(" | ") });
+    // P1-H10: Return only safe error message — no stack trace in response body
+    return new Response(
+      JSON.stringify({ error: "Erro interno do servidor", step: logContext }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });
