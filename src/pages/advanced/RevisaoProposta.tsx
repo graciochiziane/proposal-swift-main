@@ -193,7 +193,7 @@ export default function RevisaoProposta() {
         previousSections,
       });
 
-      await saveSectionAIContent(answer.id, result.content, 'gemini-2.5-flash', 0);
+      await saveSectionAIContent(answer.id, result.content, 'gemini-3.1-flash-lite', 0);
       const updated = await getSectionAnswers(proposal.id);
       setAnswers(updated);
       toast.success(`Seccao "${sectionDef.title}" gerada`);
@@ -231,7 +231,7 @@ export default function RevisaoProposta() {
         previousSections,
       });
 
-      await saveSectionAIContent(answer.id, result.content, 'gemini-2.5-flash', 0);
+      await saveSectionAIContent(answer.id, result.content, 'gemini-3.1-flash-lite', 0);
       const updated = await getSectionAnswers(proposal.id);
       setAnswers(updated);
       toast.success('Seccao regenerada');
