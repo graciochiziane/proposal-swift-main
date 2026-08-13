@@ -12,6 +12,7 @@ import Clientes from "@/pages/Clientes";
 import Catalogo from "@/pages/Catalogo";
 import CriarProposta from "@/pages/CriarProposta";
 import Propostas from "@/pages/Propostas";
+import PropostasAvancadas from "@/pages/PropostasAvancadas";
 import ResumoProposta from "@/pages/ResumoProposta";
 import GerarPropostaIA from "@/pages/GerarPropostaIA";
 import Configuracoes from "@/pages/Configuracoes";
@@ -56,6 +57,7 @@ const App = () => (
                       <Route path="/clientes" element={<Clientes />} />
                       <Route path="/catalogo" element={<Catalogo />} />
                       <Route path="/propostas" element={<Propostas />} />
+                      <Route path="/propostas-avancadas" element={<PropostasAvancadas />} />
                       <Route path="/proposta/nova" element={<CriarProposta />} />
                       <Route path="/proposta/editar/:id" element={<CriarProposta />} />
                       <Route path="/proposta/:id" element={<ResumoProposta />} />

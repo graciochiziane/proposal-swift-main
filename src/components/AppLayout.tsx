@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FileText, Users, LayoutDashboard, Menu, X, Settings, Package, Building2 } from 'lucide-react';
+import { FileText, Users, LayoutDashboard, Menu, X, Settings, Package, Building2, Sparkles } from 'lucide-react';
 import UserProfile from '@/components/UserProfile';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
 import InvitationBanner from '@/components/org/InvitationBanner';
@@ -8,6 +8,7 @@ import InvitationBanner from '@/components/org/InvitationBanner';
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Propostas', path: '/propostas', icon: FileText },
+  { label: 'Propostas Avançadas', path: '/propostas-avancadas', icon: Sparkles },
   { label: 'Clientes', path: '/clientes', icon: Users },
   { label: 'Catálogo', path: '/catalogo', icon: Package },
   { label: 'Configurações', path: '/configuracoes', icon: Settings },
