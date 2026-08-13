@@ -8,6 +8,8 @@ import {
   type Organization,
   type MembershipWithOrg,
 } from './useOrganization';
+// P1-H11: Role cache helpers for ProtectedRoute role guard
+import { refreshRole, clearRoleCache } from '@/services/authHelpers';
 
 interface AuthContextValue {
   user: User | null;
@@ -65,6 +67,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(sess);
       setUser(sess?.user ?? null);
 
+      // P1-H11: Refresh cached platform role on auth state changes
+      if (event === 'SIGNED_IN' && sess?.user) {
+        refreshRole().catch(() => {/* silent — role check is best-effort */});
+      }
+      if (event === 'SIGNED_OUT') {
+        clearRoleCache();
+      }
+
       // PostHog: identify on login
       if (event === 'SIGNED_IN' && sess?.user) {
         posthog.identify(sess.user.id, {
@@ -88,6 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(sess);
       setUser(sess?.user ?? null);
       setLoading(false);
+      // P1-H11: Populate role cache on initial load if session exists
+      if (sess?.user) {
+        refreshRole().catch(() => {/* silent */});
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -95,6 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    // P1-H11: Clear role cache on explicit sign-out
+    clearRoleCache();
   };
 
   const combinedLoading = loading || orgLoading;

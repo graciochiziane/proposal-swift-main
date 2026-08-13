@@ -2,15 +2,14 @@
 // Supabase Edge Function: send-invite-email
 // Recebe: { invitation_id, organization_id, email, role, org_nome }
 // Envia email com link de aceite usando Resend
+//
+// P0-C3 (2026-08-13): Added JWT verification
+// P0-C4 (2026-08-13): Replaced CORS '*' with allowlist
 // ============================================================
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { verifyAuth } from "../_shared/auth.ts";
 
 interface InvitePayload {
   invitation_id: string;
@@ -32,11 +31,25 @@ function roleLabel(role: string): string {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const corsHeaders = getCorsHeaders(req);
+
+  // Handle CORS preflight
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
 
   try {
+    // ---- P0-C3: JWT verification ----
+    const auth = await verifyAuth(req);
+    if (auth.error) {
+      return new Response(
+        JSON.stringify({ error: auth.error.message, step: auth.error.step }),
+        {
+          status: auth.error.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     const { invitation_id, organization_id, email, role, org_nome, token }: InvitePayload = await req.json();
 
     if (!email || !token) {
@@ -72,8 +85,8 @@ Deno.serve(async (req: Request) => {
 
     if (!resendApiKey) {
       // Sem API key: logar e nao falhar (o convite existe, so nao tem email)
-      console.log(`[send-invite-email] RESEND_API_KEY nao configurada. Convite ${invitation_id} criado sem email. Link: ${acceptUrl}`);
-      return new Response(JSON.stringify({ success: true, warning: "email_nao_enviado", link: acceptUrl }), {
+      console.log(`[send-invite-email] RESEND_API_KEY nao configurada. Convite ${invitation_id} criado sem email.`);
+      return new Response(JSON.stringify({ success: true, warning: "email_nao_enviado" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

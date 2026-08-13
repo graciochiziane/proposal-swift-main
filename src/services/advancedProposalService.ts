@@ -1,6 +1,10 @@
 // ============================================================
 // Advanced Proposals Service
 // All DB operations for the Blueprint Engine
+//
+// P1-H7 (2026-08-13): createAdvancedProposal now verifies that the
+//   caller is a member of the target organization before inserting.
+//   Previously accepted caller-supplied organizationId without check.
 // ============================================================
 
 import { supabase } from '@/integrations/supabase/client';
@@ -110,14 +114,28 @@ export async function createAdvancedProposal(input: {
   title: string;
   totalSections: number;
 }): Promise<AdvancedProposal> {
-  const { data: user } = await supabase.auth.getUser();
-  if (!user) throw new Error('Nao autenticado');
+  const { data: userData, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !userData.user) throw new Error('Não autenticado');
+
+  // P1-H7: Verificar que o caller é membro da organização alvo
+  // Impede criar propostas em nome de orgs alheias
+  const { data: membership, error: mbErr } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', input.organizationId)
+    .eq('user_id', userData.user.id)
+    .maybeSingle();
+
+  if (mbErr) throw new Error(`Erro ao verificar membership: ${mbErr.message}`);
+  if (!membership) {
+    throw new Error('Acesso negado: não é membro desta organização');
+  }
 
   const { data, error } = await supabase
     .from('advanced_proposals')
     .insert({
       organization_id: input.organizationId,
-      owner_id: user.user.id,
+      owner_id: userData.user.id,
       client_id: input.clientId,
       blueprint_id: input.blueprintId,
       blueprint_version: input.blueprintVersion,

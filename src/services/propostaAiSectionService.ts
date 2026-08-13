@@ -1,12 +1,16 @@
 // ============================================================
 // AI Section Generation Service
-// Tenta Edge Function primeiro, fallback para Gemini directo
+// Chama Edge Function 'generate-section' para gerar conteúdo IA.
+//
+// P0-C1 (2026-08-13): Removed direct Gemini fallback.
+//   Previously this service had a fallback to geminiClient.ts which
+//   contained a hardcoded API key exposed in the client bundle.
+//   Now uses Edge Function exclusively — key stays server-side.
 // ============================================================
 
 import { supabase } from '@/integrations/supabase/client';
 import type { AIGenerationInput, AIGenerationOutput } from '@/types/advancedProposal';
 import { saveSectionAIContent, updateAdvancedProposalStatus } from './advancedProposalService';
-import { generateSectionDirect, type GenerateSectionResult } from './geminiClient';
 
 // --- Retry config ---
 const MAX_RETRIES = 2;
@@ -16,12 +20,14 @@ function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 /**
  * Gera conteudo AI para uma seccao especifica.
- * Tenta Edge Function primeiro, faz fallback para chamada directa ao Gemini.
+ * Chama Edge Function 'generate-section' com retry.
+ * Se todos os retries falharem, lanca erro (sem fallback directo).
  */
 export async function generateSectionContent(
   input: AIGenerationInput,
 ): Promise<AIGenerationOutput> {
-  // Try Edge Function first
+  let lastError: Error | null = null;
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const { data, error } = await supabase.functions.invoke('generate-section', {
@@ -52,14 +58,16 @@ export async function generateSectionContent(
 
       // Edge function returned error body
       const errMsg = error?.message || data?.error || 'Unknown error';
+      lastError = new Error(errMsg);
       console.warn(`[AI] Edge Function attempt ${attempt + 1} failed:`, errMsg);
-      
+
       if (attempt < MAX_RETRIES) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
         continue;
       }
     } catch (err) {
-      console.warn(`[AI] Edge Function attempt ${attempt + 1} exception:`, err);
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.warn(`[AI] Edge Function attempt ${attempt + 1} exception:`, lastError);
       if (attempt < MAX_RETRIES) {
         await sleep(RETRY_DELAY_MS * (attempt + 1));
         continue;
@@ -67,29 +75,12 @@ export async function generateSectionContent(
     }
   }
 
-  // Fallback: Direct Gemini call
-  console.log('[AI] Falling back to direct Gemini API call');
-  const result: GenerateSectionResult = await generateSectionDirect({
-    sectionId: input.sectionId,
-    sectionTitle: input.sectionTitle,
-    sectionType: input.sectionType,
-    contentRules: input.contentRules,
-    questions: input.questions.map(q => ({
-      id: q.id,
-      question_text: q.question_text,
-    })),
-    answers: input.answers,
-    companyInfo: input.companyInfo,
-    clientInfo: input.clientInfo,
-    previousSections: input.previousSections,
-  });
-
-  return {
-    sectionId: result.sectionId,
-    content: result.content,
-    warnings: result.warnings,
-    missingInformation: result.missingInformation,
-  };
+  // P0-C1: Sem fallback directo ao Gemini — lança erro para o caller tratar.
+  // A Edge Function é a única via (key fica server-side, não no client bundle).
+  throw new Error(
+    `Falha ao gerar secção após ${MAX_RETRIES + 1} tentativas. ` +
+    `Verifique sua conexão e tente novamente. Último erro: ${lastError?.message || 'desconhecido'}`
+  );
 }
 
 /**
@@ -133,11 +124,13 @@ export async function generateAllSections(params: {
         previousSections,
       });
 
-      // Save AI content to DB with token count
+      // Save AI content to DB
+      // P0-C1/H12: usar modelo consistente com Edge Function (gemini-3.1-flash-lite)
+      // Tokens reais virão da Edge Function no futuro; por ora 0 (audit H10 tracking)
       await saveSectionAIContent(
         section.answerId,
         output.content,
-        'gemini-2.5-flash',
+        'gemini-3.1-flash-lite',
         0,
       );
 

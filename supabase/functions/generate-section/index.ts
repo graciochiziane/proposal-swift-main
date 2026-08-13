@@ -2,15 +2,13 @@
 // Supabase Edge Function: generate-section
 // Gera conteudo AI para UMA seccao de proposta avancada
 // Anti-hallucination: so preenche dentro da estrutura aprovada
+//
+// P0-C4 (2026-08-13): Replaced CORS '*' with allowlist
 // ============================================================
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { validateGeminiModel } from "../_shared/gemini.ts";
 
 const TONE_MAP: Record<string, string> = {
   formal: `
@@ -39,9 +37,10 @@ const TONE_MAP: Record<string, string> = {
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const corsHeaders = getCorsHeaders(req);
+
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
 
   const startTime = Date.now();
   let logCtx = "INIT";
@@ -85,8 +84,10 @@ Deno.serve(async (req) => {
       companyInfo,
       clientInfo,
       previousSections = [],
-      model = "gemini-2.5-flash",
+      model: bodyModel,
     } = body;
+    // P1-H9: Validate model against allowlist (prevents cost injection)
+    const model = validateGeminiModel(bodyModel);
 
     if (!sectionId || !sectionTitle || !questions || !answers) {
       return new Response(

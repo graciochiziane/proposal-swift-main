@@ -2,19 +2,17 @@
 // Supabase Edge Function: generate-proposal
 // Recebe dados da cotacao + campos do formulario
 // Chama Google Gemini API para gerar narrativa estruturada
+//
+// P0-C4 (2026-08-13): Replaced CORS '*' with allowlist
 // ============================================================
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { validateGeminiModel } from "../_shared/gemini.ts";
 
 // Helper: retorna 200 com { error, step } para que o frontend receba os detalhes
 // (Supabase functions.invoke perde o body em respostas non-2xx)
-function errorResponse(message: string, step: string, extra?: Record<string, unknown>) {
+function errorResponse(message: string, step: string, corsHeaders: Record<string, string>, extra?: Record<string, unknown>) {
   return new Response(
     JSON.stringify({ error: message, step, ...extra }),
     {
@@ -58,10 +56,11 @@ const BASE_SECTIONS = ["contexto", "problema", "solucao", "beneficios"];
 const ADVANCED_SECTIONS = ["impacto", "escopo", "cronograma", "condicoes"];
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
 
   const startTime = Date.now();
   let logContext = "INIT";
@@ -115,15 +114,16 @@ Deno.serve(async (req) => {
     } catch (parseErr) {
       const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
       console.error("[STEP-FAIL] PARSE: body invalido", parseMsg);
-      return errorResponse("Corpo da requisicao invalido: " + parseMsg, "parse");
+      return errorResponse("Corpo da requisicao invalido: " + parseMsg, "parse", corsHeaders);
     }
 
     const { cotacaoId, fields, tone = "formal", mode = "rapido", sector, model: bodyModel } = body;
-    const model = bodyModel || "gemini-3.1-flash-lite";
+    // P1-H9: Validate model against allowlist (prevents cost injection)
+    const model = validateGeminiModel(bodyModel);
 
     if (!cotacaoId || !fields) {
       console.error("[STEP-FAIL] PARSE: cotacaoId ou fields em falta", { cotacaoId, hasFields: !!fields });
-      return errorResponse("cotacaoId e fields sao obrigatorios (cotacaoId=" + (cotacaoId || "null") + ", hasFields=" + !!fields + ")", "parse");
+      return errorResponse("cotacaoId e fields sao obrigatorios (cotacaoId=" + (cotacaoId || "null") + ", hasFields=" + !!fields + ")", "parse", corsHeaders);
     }
     console.log(`[STEP-OK] PARSE: cotacaoId=${cotacaoId}, model=${model}, mode=${mode}, tone=${tone}`);
 
@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
 
     if (propError || !proposta) {
       console.error("[STEP-FAIL] DB_LOAD:", propError?.message || "proposta null");
-      return errorResponse("Cotacao nao encontrada: " + (propError?.message || "sem resultados para cotacaoId=" + cotacaoId), "db_load");
+      return errorResponse("Cotacao nao encontrada: " + (propError?.message || "sem resultados para cotacaoId=" + cotacaoId), "db_load", corsHeaders);
     }
     console.log(`[STEP-OK] DB_LOAD: proposta=${proposta.numero}, items=${proposta.proposal_items?.length || 0}, elapsed=${Date.now() - startTime}ms`);
 
@@ -252,7 +252,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
       console.error("[STEP-FAIL] GEMINI_CALL: GEMINI_API_KEY nao configurada");
-      return errorResponse("GEMINI_API_KEY nao configurada no Supabase", "gemini_call");
+      return errorResponse("GEMINI_API_KEY nao configurada no Supabase", "gemini_call", corsHeaders);
     }
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
@@ -283,7 +283,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
     } catch (fetchErr) {
       const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       console.error("[STEP-FAIL] GEMINI_CALL: fetch exception:", fetchMsg);
-      return errorResponse("Falha ao conectar com a API Gemini: " + fetchMsg, "gemini_call");
+      return errorResponse("Falha ao conectar com a API Gemini: " + fetchMsg, "gemini_call", corsHeaders);
     }
 
     console.log(`[STEP] GEMINI_CALL: HTTP status=${geminiResponse.status}, elapsed=${Date.now() - startTime}ms`);
@@ -299,7 +299,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
         status: geminiResponse.status,
         body: errBody.substring(0, 500),
       });
-      return errorResponse("Erro na API Gemini (HTTP " + geminiResponse.status + "): " + errBody.substring(0, 300), "gemini_call");
+      return errorResponse("Erro na API Gemini (HTTP " + geminiResponse.status + "): " + errBody.substring(0, 300), "gemini_call", corsHeaders);
     }
 
     // ---- STEP 6: Parse Gemini response ----
@@ -469,9 +469,17 @@ Gere a proposta seguindo as seccoes especificadas.`;
     );
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    // P1-H10: Stack traces are logged server-side only (not leaked to client)
     const errStack = err instanceof Error ? err.stack || "" : "";
     console.error(`[FATAL] logContext=${logContext}`, errMsg);
     console.error(`[FATAL] stack:`, errStack);
-    return errorResponse("Erro interno do servidor: " + errMsg, logContext, { detail: errMsg, stack: errStack.split("\n").slice(0, 5).join(" | ") });
+    // P1-H10: Return only safe error message — no stack trace in response body
+    return new Response(
+      JSON.stringify({ error: "Erro interno do servidor", step: logContext }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });
