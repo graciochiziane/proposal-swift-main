@@ -173,12 +173,15 @@ export async function getAdvancedProposals(): Promise<AdvancedProposal[]> {
 export async function getAdvancedProposalsWithBlueprint(): Promise<Array<
   AdvancedProposal & { blueprint_name?: string; category_name?: string }
 >> {
+  // FIX: PostgREST nested join syntax — business_categories must be nested
+  // inside proposal_blueprints, not chained with a dot.
+  // Old (broken): proposal_blueprints(name, business_category_id), proposal_blueprints.business_categories(name)
+  // New (correct): proposal_blueprints(name, business_category_id, business_categories(name))
   const { data, error } = await supabase
     .from('advanced_proposals')
     .select(`
       *,
-      proposal_blueprints(name, business_category_id),
-      proposal_blueprints.business_categories(name)
+      proposal_blueprints!blueprint_id(name, business_category_id, business_categories!business_category_id(name))
     `)
     .order('created_at', { ascending: false });
   if (error) throw error;

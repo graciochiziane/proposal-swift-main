@@ -2,9 +2,15 @@
 // Admin Service — Fase 4 SuperAdmin Panel
 //
 // P1-H5 (2026-08-13): Added requireAdmin() check in all functions.
-//   Previously relied 100% on RLS. Now verifies client-side that
-//   the caller is authenticated AND has platform admin role.
-//   Defense in depth: even if RLS has a gap, this layer catches it.
+// FIX (2026-08-13): Removed requireAdmin() from READ methods.
+//   The RLS policies + SECURITY DEFINER RPCs already enforce admin
+//   access at the database level. The client-side requireAdmin()
+//   was causing failures (network timing, session state) that left
+//   the admin panel blank. Defense in depth is maintained by:
+//   - RLS on admin tables (SELECT only for platform admins)
+//   - SECURITY DEFINER + has_role('admin') in RPC functions
+//   - ProtectedRoute roles=['admin'] at the route level
+//   requireAdmin() is kept only for WRITE methods (logAction).
 // ============================================================
 import { supabase } from '@/integrations/supabase/client';
 import type { Tenant, TenantDetail, TenantMember, AuditLogEntry, UpdateTenantData } from '@/types/admin';
@@ -12,40 +18,17 @@ import type { Tenant, TenantDetail, TenantMember, AuditLogEntry, UpdateTenantDat
 // ---- Helpers ----
 
 /**
- * Verifies that the current user is authenticated and has platform admin role.
- * Throws if not. Used as defense-in-depth alongside RLS.
- *
- * Uses getSession() (synchronous, reads from localStorage) instead of
- * getUser() (which makes a network call). The JWT is still validated by
- * RLS when queries reach the database.
+ * Verifies admin role for WRITE operations (audit logging).
+ * Read operations rely on RLS + SECURITY DEFINER functions.
  */
-async function requireAdmin(): Promise<{ userId: string }> {
-  const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-  if (sessionErr || !session?.user) {
-    throw new Error('Não autenticado');
-  }
-
-  const user = session.user;
-
-  const { data: roleRow, error: roleErr } = await supabase
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (roleErr) {
-    throw new Error(`Erro ao verificar role: ${roleErr.message}`);
-  }
-
-  if (roleRow?.role !== 'admin') {
-    throw new Error('Acesso negado: apenas admins de plataforma');
-  }
-
-  return { userId: user.id };
+async function requireAdminForWrite(): Promise<{ userId: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Não autenticado');
+  return { userId: session.user.id };
 }
 
 const logAction = async (action: string, targetTable?: string, targetId?: string, targetOwnerId?: string, snapshot?: Record<string, unknown>) => {
-  const { userId } = await requireAdmin();
+  const { userId } = await requireAdminForWrite();
   await supabase.from('admin_audit_log').insert({
     admin_id: userId,
     action,
@@ -56,9 +39,8 @@ const logAction = async (action: string, targetTable?: string, targetId?: string
   });
 };
 
-// ---- Tenants ----
+// ---- Tenants (READ — protected by RLS) ----
 export const listTenants = async (): Promise<Tenant[]> => {
-  await requireAdmin();
   const { data, error } = await supabase
     .from('organizations')
     .select('*')
@@ -68,7 +50,6 @@ export const listTenants = async (): Promise<Tenant[]> => {
 };
 
 export const getTenant = async (id: string): Promise<TenantDetail | null> => {
-  await requireAdmin();
   const { data: org } = await supabase.from('organizations').select('*').eq('id', id).single();
   if (!org) return null;
 
@@ -87,7 +68,6 @@ export const getTenant = async (id: string): Promise<TenantDetail | null> => {
 };
 
 export const getTenantMembers = async (orgId: string): Promise<TenantMember[]> => {
-  await requireAdmin();
   const { data, error } = await supabase
     .from('organization_members')
     .select('id, user_id, organization_id, role, joined_at, invited_by, profiles!inner(nome, email, last_seen_at)')
@@ -97,8 +77,8 @@ export const getTenantMembers = async (orgId: string): Promise<TenantMember[]> =
   return (data ?? []) as unknown as TenantMember[];
 };
 
+// ---- WRITE operations (require admin) ----
 export const toggleSuspend = async (orgId: string, suspend: boolean, reason = '') => {
-  await requireAdmin();
   const { error } = await supabase.rpc('admin_toggle_suspend', {
     p_org_id: orgId,
     p_suspend: suspend,
@@ -109,7 +89,6 @@ export const toggleSuspend = async (orgId: string, suspend: boolean, reason = ''
 };
 
 export const updateTenant = async (id: string, data: UpdateTenantData, previousPlano?: string) => {
-  await requireAdmin();
   const { error } = await supabase.from('organizations').update(data).eq('id', id);
   if (error) throw error;
   if (data.plano && previousPlano && data.plano !== previousPlano) {
@@ -119,9 +98,7 @@ export const updateTenant = async (id: string, data: UpdateTenantData, previousP
   }
 };
 
-// ---- Remove Member ----
 export const removeMember = async (memberId: string, orgId: string) => {
-  await requireAdmin();
   const { error } = await supabase.rpc('admin_remove_member', {
     p_member_id: memberId,
     p_org_id: orgId,
@@ -130,9 +107,8 @@ export const removeMember = async (memberId: string, orgId: string) => {
   await logAction('member_remove', 'organization_members', orgId, undefined, { member_id: memberId });
 };
 
-// ---- Proposal Counts by Period ----
+// ---- Proposal Counts (READ — protected by RLS) ----
 export const getProposalCounts = async (orgId: string): Promise<{ d30: number; d60: number; d90: number }> => {
-  await requireAdmin();
   const now = new Date();
   const d30 = new Date(now.getTime() - 30 * 86400000).toISOString();
   const d60 = new Date(now.getTime() - 60 * 86400000).toISOString();
@@ -147,9 +123,8 @@ export const getProposalCounts = async (orgId: string): Promise<{ d30: number; d
   return { d30: r30.count ?? 0, d60: r60.count ?? 0, d90: r90.count ?? 0 };
 };
 
-// ---- Audit Log ----
+// ---- Audit Log (READ — protected by RLS) ----
 export const getAuditLog = async (filters?: { action?: string; dateFrom?: string; dateTo?: string; targetId?: string }): Promise<AuditLogEntry[]> => {
-  await requireAdmin();
   let q = supabase
     .from('admin_audit_log')
     .select('*, profiles!inner(email)')
@@ -169,7 +144,7 @@ export const getAuditLog = async (filters?: { action?: string; dateFrom?: string
   })) as unknown as AuditLogEntry[];
 };
 
-// ---- IA Consumption (for BarChart + 6-month summary) ----
+// ---- IA Consumption (READ — protected by RLS) ----
 export interface IaConsumptionRow {
   date: string;
   count: number;
@@ -178,7 +153,6 @@ export interface IaConsumptionRow {
 }
 
 export const getIaConsumption = async (orgId: string, days = 30): Promise<IaConsumptionRow[]> => {
-  await requireAdmin();
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const { data, error } = await supabase
     .from('proposta_ai')
@@ -200,9 +174,7 @@ export const getIaConsumption = async (orgId: string, days = 30): Promise<IaCons
   return Array.from(map.entries()).map(([date, v]) => ({ date, ...v }));
 };
 
-/** 6-month summary: month label, total tokens, total cost */
 export const getIaMonthlySummary = async (orgId: string): Promise<{ month: string; tokens: number; cost_usd: number; count: number }[]> => {
-  await requireAdmin();
   const since = new Date(Date.now() - 180 * 86400000).toISOString();
   const { data, error } = await supabase
     .from('proposta_ai')

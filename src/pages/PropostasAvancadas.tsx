@@ -66,7 +66,10 @@ export default function PropostasAvancadas() {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  const canCreate = hasFeature('advanced_proposals');
+  // Por defeito, mostra o botão. Só esconde se usePlanFeatures carregou
+  // correctamente E retornou enabled=false. Se featuresLoading=true ou
+  // houve erro, assume que pode criar (defensive default).
+  const canCreate = featuresLoading || hasFeature('advanced_proposals');
 
   const loadPropostas = async () => {
     setLoading(true);
@@ -105,8 +108,8 @@ export default function PropostasAvancadas() {
     );
   }, [propostas]);
 
-  // Loading state
-  if (loading || featuresLoading) {
+  // Loading state — only wait for proposals, not features
+  if (loading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="flex items-center gap-3 text-muted-foreground">
