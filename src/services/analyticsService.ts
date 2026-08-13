@@ -1,3 +1,12 @@
+// ============================================================
+// Analytics Service — Platform-wide metrics
+//
+// P1-H6 (2026-08-13): Added requireAdmin() to all read methods.
+//   Previously exposed PII (emails, last_seen_at, visits) of ALL
+//   users to ANY authenticated caller. Now requires platform admin.
+//   trackPageVisit() remains open (any authenticated user tracks
+//   their own activity — RLS enforces user_id = auth.uid()).
+// ============================================================
 import { supabase } from '@/integrations/supabase/client';
 
 // ---- Types ----
@@ -49,6 +58,32 @@ function daysAgo(n: number): Date {
   return d;
 }
 
+/**
+ * Verifies that the current user is authenticated and has platform admin role.
+ * Used by all read methods in this service (they expose platform-wide PII).
+ * Defense in depth alongside RLS and SECURITY DEFINER functions.
+ */
+async function requireAdmin(): Promise<void> {
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    throw new Error('Não autenticado');
+  }
+
+  const { data: roleRow, error: roleErr } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (roleErr) {
+    throw new Error(`Erro ao verificar role: ${roleErr.message}`);
+  }
+
+  if (roleRow?.role !== 'admin') {
+    throw new Error('Acesso negado: apenas admins de plataforma');
+  }
+}
+
 // ---- Core Analytics Service ----
 export const analyticsService = {
 
@@ -57,6 +92,7 @@ export const analyticsService = {
    * FIX 2.1: Usa RPC admin_platform_metrics() em vez de 9 queries
    */
   async getPlatformMetrics(): Promise<PlatformMetrics> {
+    await requireAdmin();
     const { data, error } = await supabase.rpc('admin_platform_metrics');
     if (error) throw error;
     return data as unknown as PlatformMetrics;
@@ -66,6 +102,7 @@ export const analyticsService = {
    * Utilizadores actualmente online (últimos 15 min)
    */
   async getOnlineUsers(): Promise<ActiveUser[]> {
+    await requireAdmin();
     const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const today = formatDate(new Date());
 
@@ -103,6 +140,7 @@ export const analyticsService = {
    * Novos registos por dia (últimos N dias)
    */
   async getSignupsByDay(days: number): Promise<SignupData[]> {
+    await requireAdmin();
     const startDate = formatDate(daysAgo(days));
     const { data, error } = await supabase
       .from('profiles')
@@ -141,6 +179,7 @@ export const analyticsService = {
    * Utilizadores activos por dia (últimos N dias)
    */
   async getDailyActiveUsers(days: number): Promise<DayMetric[]> {
+    await requireAdmin();
     const startDate = formatDate(daysAgo(days));
     const { data, error } = await supabase
       .from('user_activity')
@@ -176,6 +215,7 @@ export const analyticsService = {
    * Propostas criadas por dia (últimos N dias)
    */
   async getProposalsByDay(days: number): Promise<ProposalMetric[]> {
+    await requireAdmin();
     const startDate = formatDate(daysAgo(days));
     const { data, error } = await supabase
       .from('proposals')
@@ -212,6 +252,7 @@ export const analyticsService = {
    * Utilizadores mais activos (últimos N dias)
    */
   async getMostActiveUsers(days: number, limit: number = 10): Promise<ActiveUser[]> {
+    await requireAdmin();
     const startDate = formatDate(daysAgo(days));
 
     const { data, error } = await supabase
@@ -258,6 +299,10 @@ export const analyticsService = {
   /**
    * Gravar uma visita à página (chamado pelo hook useActivityTracker)
    * Deduplica: só insere se última visita do user foi há mais de 5 minutos
+   *
+   * NOTA: Este método NÃO requer admin — qualquer utilizador autenticado
+   * pode gravar a sua própria atividade. RLS policy em user_activity
+   * garante que user_id = auth.uid() no INSERT.
    */
   async trackPageVisit(userId: string, page: string): Promise<void> {
     try {
@@ -290,3 +335,4 @@ export const analyticsService = {
     }
   },
 };
+
