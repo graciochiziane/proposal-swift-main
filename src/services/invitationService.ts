@@ -2,6 +2,13 @@ import { supabase } from '@/integrations/supabase/client';
 import type { OrgRole } from '@/hooks/useOrganization';
 import { OrganizationService } from '@/services/organizationService';
 
+// ============================================================
+// P1-H8 (2026-08-13): Added auth + ownership checks to cancel() and resend().
+//   getByToken() intentionally allows unauthenticated access — the
+//   /invite/accept page must load before login. RLS on the underlying
+//   RPC (get_invitation_by_token) restricts to non-sensitive fields.
+// ============================================================
+
 // ── Types ──
 export interface Invitation {
   id: string;
@@ -215,8 +222,13 @@ export const InvitationService = {
 
   /**
    * Cancela um convite pendente.
+   * P1-H8: Requires authenticated user. RLS policy on organization_invitations
+   * restricts DELETE to owner/admin of the org — defense in depth.
    */
   async cancel(invitationId: string): Promise<void> {
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) throw new Error('Não autenticado');
+
     const { error } = await supabase
       .from('organization_invitations')
       .delete()
@@ -312,8 +324,14 @@ export const InvitationService = {
 
   /**
    * Reenvia um convite — renova expires_at por 7 dias.
+   * P1-H8: Requires authenticated user. RLS policy restricts UPDATE to
+   *   owner/admin of the org. Previous version allowed unlimited extension
+   *   by anyone with the invitation_id.
    */
   async resend(invitationId: string): Promise<void> {
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) throw new Error('Não autenticado');
+
     const { data: invite, error: fetchErr } = await supabase
       .from('organization_invitations')
       .select('id, token, email, role, organization_id')
@@ -321,7 +339,7 @@ export const InvitationService = {
       .is('accepted_at', null)
       .single();
 
-    if (fetchErr || !invite) throw new Error('Convite nao encontrado');
+    if (fetchErr || !invite) throw new Error('Convite não encontrado');
 
     const { error: updateErr } = await supabase
       .from('organization_invitations')
@@ -336,6 +354,6 @@ export const InvitationService = {
       invite.email,
       invite.role,
       invite.organization_id
-    ).catch((emailErr) => console.warn('Convite renovado mas email nao reenviado:', emailErr));
+    ).catch((emailErr) => console.warn('Convite renovado mas email não reenviado:', emailErr));
   },
 };
