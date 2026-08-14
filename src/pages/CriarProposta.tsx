@@ -7,6 +7,7 @@ import { ClienteService } from '@/services/clienteService';
 import { CatalogService } from '@/services/catalogService';
 import { calcularSubtotal, calcularTotal } from '@/lib/calculos';
 import { QuickAddClienteModal } from '@/components/QuickAddClienteModal';
+import { ClienteCombobox } from '@/components/ClienteCombobox';
 import { toast } from 'sonner';
 import type { ItemProposta, DescontoTipo, Cliente, CatalogoItem } from '@/types';
 
@@ -199,16 +200,12 @@ export default function CriarProposta() {
         <div>
           <label className={labelClass}>Cliente *</label>
           <div className="flex gap-2">
-            <select
-              className={inputClass + ' flex-1'}
+            <ClienteCombobox
+              clientes={clientes}
               value={clienteId}
-              onChange={e => setClienteId(e.target.value)}
-            >
-              <option value="">Selecionar cliente</option>
-              {clientes.map(c => (
-                <option key={c.id} value={c.id}>{c.nome}{c.empresa ? ` — ${c.empresa}` : ''}</option>
-              ))}
-            </select>
+              onChange={setClienteId}
+              className="flex-1"
+            />
             <button
               type="button"
               onClick={() => setShowClienteModal(true)}
