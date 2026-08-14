@@ -94,9 +94,9 @@ export default function CRMContactos() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Contactos CRM</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Contactos</h1>
           <p className="text-sm text-muted-foreground">
-            {clientes.length} contacto{clientes.length !== 1 ? 's' : ''}
+            {clientes.length} contacto{clientes.length !== 1 ? 's' : ''} comercial{clientes.length !== 1 ? 's' : ''}
           </p>
         </div>
         <Button onClick={() => navigate('/clientes')} className="gap-2">

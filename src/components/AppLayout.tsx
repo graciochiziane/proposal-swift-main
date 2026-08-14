@@ -6,25 +6,27 @@ import { useActivityTracker } from '@/hooks/useActivityTracker';
 import { usePlanFeatures } from '@/hooks/usePlanFeatures';
 import InvitationBanner from '@/components/org/InvitationBanner';
 
+// Ordem lógica: Dashboard → Propostas → Propostas Avançadas → Clientes → Vendas/CRM → Catálogo → Configurações → Organização
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Propostas', path: '/propostas', icon: FileText },
   { label: 'Propostas Avançadas', path: '/propostas-avancadas', icon: Sparkles },
   { label: 'Clientes', path: '/clientes', icon: Users },
+  { label: 'Vendas', path: '/crm', icon: TrendingUp, requiresFeature: 'crm_access' as const },
   { label: 'Catálogo', path: '/catalogo', icon: Package },
   { label: 'Configurações', path: '/configuracoes', icon: Settings },
   { label: 'Organização', path: '/organizacao', icon: Building2 },
-];
-
-const crmNavItems = [
-  { label: 'CRM', path: '/crm', icon: TrendingUp },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { hasFeature } = usePlanFeatures();
-  const showCRM = hasFeature('crm_access');
+
+  // Filtrar items que requerem feature (ex: Vendas requer crm_access)
+  const visibleNavItems = navItems.filter(item =>
+    !('requiresFeature' in item) || hasFeature(item.requiresFeature as string)
+  );
 
   // Regista actividade do utilizador em cada página
   useActivityTracker();
@@ -45,25 +47,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-1">
-            {navItems.map(item => {
-              const active = location.pathname === item.path;
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    active
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-            {showCRM && crmNavItems.map(item => {
-              const active = location.pathname.startsWith('/crm');
+            {visibleNavItems.map(item => {
+              const active = item.path === '/crm'
+                ? location.pathname.startsWith('/crm')
+                : location.pathname === item.path;
               return (
                 <Link
                   key={item.path}
@@ -100,26 +87,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Mobile nav */}
         {mobileOpen && (
           <nav className="md:hidden border-t border-border p-3 space-y-1 animate-fade-in">
-            {navItems.map(item => {
-              const active = location.pathname === item.path;
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    active
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-            {showCRM && crmNavItems.map(item => {
-              const active = location.pathname.startsWith('/crm');
+            {visibleNavItems.map(item => {
+              const active = item.path === '/crm'
+                ? location.pathname.startsWith('/crm')
+                : location.pathname === item.path;
               return (
                 <Link
                   key={item.path}
