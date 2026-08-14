@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Phone, Mail, Building2, WhatsApp, Edit3,
+  ArrowLeft, Phone, Mail, Building2, MessageCircle, Edit3,
   Loader2, AlertCircle, FileText, Clock, Calendar,
   Plus, Check, Trash2, ChevronRight,
 } from 'lucide-react';
@@ -205,7 +205,7 @@ export default function ClienteDetalhe() {
                 )}
                 {cliente.whatsapp && (
                   <a href={`https://wa.me/${cliente.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener" className="flex items-center gap-1 hover:text-primary">
-                    <WhatsApp className="h-4 w-4" />WhatsApp
+                    <MessageCircle className="h-4 w-4" />WhatsApp
                   </a>
                 )}
                 {cliente.email && (

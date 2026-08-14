@@ -22,6 +22,13 @@ import NovaPropostaAvancada from "@/pages/advanced/NovaPropostaAvancada";
 import PreencherProposta from "@/pages/advanced/PreencherProposta";
 import RevisaoProposta from "@/pages/advanced/RevisaoProposta";
 import BrandProfilePage from "@/pages/advanced/BrandProfilePage";
+import CRMDashboard from "@/pages/crm/CRMDashboard";
+import CRMContactos from "@/pages/crm/CRMContactos";
+import ClienteDetalhe from "@/pages/crm/ClienteDetalhe";
+import Pipeline from "@/pages/crm/Pipeline";
+import Actividades from "@/pages/crm/Actividades";
+import FollowUps from "@/pages/crm/FollowUps";
+import Insights from "@/pages/crm/Insights";
 import Auth from "@/pages/Auth";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
@@ -72,6 +79,14 @@ const App = () => (
                       <Route path="/proposta-avancada/:id" element={<PreencherProposta />} />
                       <Route path="/revisao-proposta/:id" element={<RevisaoProposta />} />
                       <Route path="/brand-profile" element={<BrandProfilePage />} />
+                      {/* CRM — Business only (feature gate via usePlanFeatures in pages) */}
+                      <Route path="/crm" element={<CRMDashboard />} />
+                      <Route path="/crm/contactos" element={<CRMContactos />} />
+                      <Route path="/crm/contactos/:id" element={<ClienteDetalhe />} />
+                      <Route path="/crm/pipeline" element={<Pipeline />} />
+                      <Route path="/crm/actividades" element={<Actividades />} />
+                      <Route path="/crm/follow-ups" element={<FollowUps />} />
+                      <Route path="/crm/insights" element={<Insights />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </AppLayout>
