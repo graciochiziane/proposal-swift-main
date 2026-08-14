@@ -1,11 +1,12 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Trash2, Bookmark, Loader2 } from 'lucide-react';
+import { Trash2, Bookmark, Loader2, UserPlus } from 'lucide-react';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import { ClienteService } from '@/services/clienteService';
 import { CatalogService } from '@/services/catalogService';
 import { calcularSubtotal, calcularTotal } from '@/lib/calculos';
+import { QuickAddClienteModal } from '@/components/QuickAddClienteModal';
 import { toast } from 'sonner';
 import type { ItemProposta, DescontoTipo, Cliente, CatalogoItem } from '@/types';
 
@@ -29,8 +30,7 @@ export default function CriarProposta() {
   const [ivaPercentual, setIvaPercentual] = useState(16);
   const [observacoes, setObservacoes] = useState('');
 
-  const [showQuickClient, setShowQuickClient] = useState(false);
-  const [quickNome, setQuickNome] = useState('');
+  const [showClienteModal, setShowClienteModal] = useState(false);
 
   const [catalogoOpen, setCatalogoOpen] = useState(false);
   const [catalogoFilter, setCatalogoFilter] = useState('');
@@ -129,22 +129,10 @@ export default function CriarProposta() {
     }
   };
 
-  const handleQuickClient = async () => {
-    if (!quickNome.trim()) return;
-    try {
-      const novo = await ClienteService.criarCliente({
-        nome: quickNome.trim(),
-        email: '', telefone: '', empresa: '', nuit: '', endereco: '',
-      });
-      setClientes(prev => [...prev, novo]);
-      setClienteId(novo.id);
-      setQuickNome('');
-      setShowQuickClient(false);
-      toast.success('Cliente adicionado');
-    } catch (error) {
-      console.error(error);
-      toast.error('Erro ao criar cliente');
-    }
+  const handleClienteCreated = (novoCliente: Cliente) => {
+    // Adicionar à lista de clientes e seleccionar automaticamente
+    setClientes(prev => [...prev, novoCliente]);
+    setClienteId(novoCliente.id);
   };
 
   const handleSave = async () => {
@@ -223,39 +211,14 @@ export default function CriarProposta() {
             </select>
             <button
               type="button"
-              onClick={() => setShowQuickClient(!showQuickClient)}
-              className="px-3 py-2 rounded-lg bg-secondary border border-border text-sm hover:bg-secondary/80 transition-colors whitespace-nowrap"
+              onClick={() => setShowClienteModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:brightness-110 transition-all whitespace-nowrap"
             >
-              + Novo
+              <UserPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">Novo Cliente</span>
+              <span className="sm:hidden">Novo</span>
             </button>
           </div>
-
-          {showQuickClient && (
-            <div className="mt-2 flex gap-2 animate-fade-up">
-              <input
-                className={inputClass + ' flex-1'}
-                placeholder="Nome do novo cliente"
-                value={quickNome}
-                onChange={e => setQuickNome(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleQuickClient()}
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={handleQuickClient}
-                className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:brightness-110 transition-all"
-              >
-                Adicionar
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowQuickClient(false); setQuickNome(''); }}
-                className="px-3 py-2 rounded-lg bg-secondary text-sm hover:bg-secondary/80 transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -474,6 +437,13 @@ export default function CriarProposta() {
           Cancelar
         </button>
       </div>
+
+      {/* Modal de Criação Rápida de Cliente */}
+      <QuickAddClienteModal
+        open={showClienteModal}
+        onOpenChange={setShowClienteModal}
+        onClienteCreated={handleClienteCreated}
+      />
     </div>
   );
 }
