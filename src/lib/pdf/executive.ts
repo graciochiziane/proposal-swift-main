@@ -53,7 +53,7 @@ export async function renderExecutive(
   doc.setFontSize(8);
   doc.setTextColor(130, 135, 140);
   doc.text(`N.º ${proposta.numero}`, pageWidth - margin, 36, { align: 'right' });
-  doc.text(`Data: ${new Date(proposta.data).toLocaleDateString('pt-BR')}`, pageWidth - margin, 42, { align: 'right' });
+  doc.text(`Data: ${new Date(proposta.data).toLocaleDateString('pt-MZ')}`, pageWidth - margin, 42, { align: 'right' });
 
   y = headerH + 10;
 

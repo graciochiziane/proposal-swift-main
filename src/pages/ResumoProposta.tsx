@@ -173,7 +173,7 @@ export default function ResumoProposta() {
           <h1 className="text-2xl font-bold mt-1">
             Proposta — {cliente?.nome || 'Cliente removido'}
           </h1>
-          <p className="text-sm text-muted-foreground">{new Date(proposta.data).toLocaleDateString('pt-BR')}</p>
+          <p className="text-sm text-muted-foreground">{new Date(proposta.data).toLocaleDateString('pt-MZ')}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {proposta?.status === 'aceite' && (

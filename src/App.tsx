@@ -7,37 +7,47 @@ import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
-import Dashboard from "@/pages/Dashboard";
-import Clientes from "@/pages/Clientes";
-import Catalogo from "@/pages/Catalogo";
-import CriarProposta from "@/pages/CriarProposta";
-import Propostas from "@/pages/Propostas";
-import PropostasAvancadas from "@/pages/PropostasAvancadas";
-import ResumoProposta from "@/pages/ResumoProposta";
-import GerarPropostaIA from "@/pages/GerarPropostaIA";
-import Configuracoes from "@/pages/Configuracoes";
-import Organizacao from "@/pages/Organizacao";
-import Admin from "@/pages/Admin";
-import NovaPropostaAvancada from "@/pages/advanced/NovaPropostaAvancada";
-import PreencherProposta from "@/pages/advanced/PreencherProposta";
-import RevisaoProposta from "@/pages/advanced/RevisaoProposta";
-import BrandProfilePage from "@/pages/advanced/BrandProfilePage";
-import CRMDashboard from "@/pages/crm/CRMDashboard";
-import CRMContactos from "@/pages/crm/CRMContactos";
-import ClienteDetalhe from "@/pages/crm/ClienteDetalhe";
-import Pipeline from "@/pages/crm/Pipeline";
-import Actividades from "@/pages/crm/Actividades";
-import FollowUps from "@/pages/crm/FollowUps";
-import Insights from "@/pages/crm/Insights";
 import { CrmGate } from "@/components/crm/CrmGate";
-import Auth from "@/pages/Auth";
-import ForgotPassword from "@/pages/ForgotPassword";
-import ResetPassword from "@/pages/ResetPassword";
-import NotFound from "./pages/NotFound.tsx";
-import AcceptInvite from "@/pages/AcceptInvite";
-import TenantDetailPage from "@/pages/TenantDetailPage";
+import { lazy, Suspense } from "react";
+import { Loader2 } from "lucide-react";
+
+// FASE 8: Code splitting — lazy load all pages for smaller initial bundle
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const Clientes = lazy(() => import("@/pages/Clientes"));
+const Catalogo = lazy(() => import("@/pages/Catalogo"));
+const CriarProposta = lazy(() => import("@/pages/CriarProposta"));
+const Propostas = lazy(() => import("@/pages/Propostas"));
+const PropostasAvancadas = lazy(() => import("@/pages/PropostasAvancadas"));
+const ResumoProposta = lazy(() => import("@/pages/ResumoProposta"));
+const GerarPropostaIA = lazy(() => import("@/pages/GerarPropostaIA"));
+const Configuracoes = lazy(() => import("@/pages/Configuracoes"));
+const Organizacao = lazy(() => import("@/pages/Organizacao"));
+const Admin = lazy(() => import("@/pages/Admin"));
+const NovaPropostaAvancada = lazy(() => import("@/pages/advanced/NovaPropostaAvancada"));
+const PreencherProposta = lazy(() => import("@/pages/advanced/PreencherProposta"));
+const RevisaoProposta = lazy(() => import("@/pages/advanced/RevisaoProposta"));
+const BrandProfilePage = lazy(() => import("@/pages/advanced/BrandProfilePage"));
+const CRMDashboard = lazy(() => import("@/pages/crm/CRMDashboard"));
+const CRMContactos = lazy(() => import("@/pages/crm/CRMContactos"));
+const ClienteDetalhe = lazy(() => import("@/pages/crm/ClienteDetalhe"));
+const Pipeline = lazy(() => import("@/pages/crm/Pipeline"));
+const Actividades = lazy(() => import("@/pages/crm/Actividades"));
+const FollowUps = lazy(() => import("@/pages/crm/FollowUps"));
+const Insights = lazy(() => import("@/pages/crm/Insights"));
+const Auth = lazy(() => import("@/pages/Auth"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
+const NotFound = lazy(() => import("@/pages/NotFound"));
+const AcceptInvite = lazy(() => import("@/pages/AcceptInvite"));
+const TenantDetailPage = lazy(() => import("@/pages/TenantDetailPage"));
 
 export const queryClient = new QueryClient();
+
+const PageLoader = () => (
+  <div className="flex items-center justify-center py-20">
+    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+  </div>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -49,10 +59,10 @@ const App = () => (
         <AuthProvider>
           <Routes>
             {/* Public auth routes */}
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/invite/accept" element={<AcceptInvite />} />
+            <Route path="/auth" element={<Suspense fallback={<PageLoader />}><Auth /></Suspense>} />
+            <Route path="/forgot-password" element={<Suspense fallback={<PageLoader />}><ForgotPassword /></Suspense>} />
+            <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>} />
+            <Route path="/invite/accept" element={<Suspense fallback={<PageLoader />}><AcceptInvite /></Suspense>} />
 
             {/* Protected app */}
             <Route
@@ -60,6 +70,7 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppLayout>
+                    <Suspense fallback={<PageLoader />}>
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/clientes" element={<Clientes />} />
@@ -72,7 +83,7 @@ const App = () => (
                       <Route path="/proposta/:id/gerar-ia" element={<GerarPropostaIA />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/organizacao" element={<Organizacao />} />
-                      {/* Admin routes — ProtectedRoute handles auth, Admin.tsx handles role check */}
+                      {/* Admin routes */}
                       <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />
                       <Route path="/admin" element={<Admin />} />
                       {/* Advanced Proposals */}
@@ -92,6 +103,7 @@ const App = () => (
                       </Routes></CrmGate>} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
+                    </Suspense>
                   </AppLayout>
                 </ProtectedRoute>
               }

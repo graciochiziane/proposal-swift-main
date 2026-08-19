@@ -60,7 +60,8 @@ const ACTIVE_ORG_KEY = 'propostaja_active_org';
 function getStoredActiveOrg(userId: string): string | null {
   try {
     return localStorage.getItem(`${ACTIVE_ORG_KEY}_${userId}`);
-  } catch {
+  } catch (err) {
+      console.error("[useOrganization] Error:", err);
     return null;
   }
 }
@@ -72,7 +73,8 @@ function setStoredActiveOrg(userId: string, orgId: string | null) {
     } else {
       localStorage.removeItem(`${ACTIVE_ORG_KEY}_${userId}`);
     }
-  } catch {
+  } catch (err) {
+      console.error("[useOrganization] Error:", err);
     // localStorage unavailable
   }
 }

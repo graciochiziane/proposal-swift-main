@@ -219,7 +219,7 @@ export async function gerarPDFNarrativa(
   doc.text(`N. ${proposta.numero}`, pageWidth - accentW + 10, 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.text(new Date(proposta.data).toLocaleDateString('pt-BR'), pageWidth - accentW + 10, 29);
+  doc.text(new Date(proposta.data).toLocaleDateString('pt-MZ'), pageWidth - accentW + 10, 29);
 
   // Section count badge
   doc.setFontSize(6.5);
@@ -488,7 +488,7 @@ export async function gerarPDFNarrativa(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.text(
-    `Ref: ${proposta.numero} | Data: ${new Date(proposta.data).toLocaleDateString('pt-BR')} | Gerado por PropostaJa`,
+    `Ref: ${proposta.numero} | Data: ${new Date(proposta.data).toLocaleDateString('pt-MZ')} | Gerado por PropostaJa`,
     margin,
     y,
   );
@@ -510,7 +510,7 @@ export async function gerarPDFNarrativa(
     doc.setTextColor(140, 150, 165);
     doc.setFontSize(7);
     doc.text('Gerado por PropostaJa - www.propostaja.co.mz', margin, footerY);
-    doc.text(new Date().toLocaleDateString('pt-BR'), pageWidth - margin, footerY, { align: 'right' });
+    doc.text(new Date().toLocaleDateString('pt-MZ'), pageWidth - margin, footerY, { align: 'right' });
   }
 
   // Save

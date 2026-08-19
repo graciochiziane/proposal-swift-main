@@ -122,7 +122,7 @@ export function TenantsTab() {
                           <span className="text-green-600 text-xs">Activo</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{new Date(t.created_at).toLocaleDateString('pt-PT')}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{new Date(t.created_at).toLocaleDateString('pt-MZ')}</TableCell>
                     </TableRow>
                   ))}
                   {filteredTenants.length === 0 && (

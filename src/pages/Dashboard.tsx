@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Plus, FileText, ArrowRight, Trash2, TrendingUp, Calendar, BarChart3, Loader2 } from 'lucide-react';
+import { Plus, FileText, ArrowRight, Trash2, TrendingUp, Calendar, BarChart3, Loader2, AlertCircle } from 'lucide-react';
 import { PropostaService, formatMZN, formatCompactMZN } from '@/services/propostaService';
 import { useState, useMemo, useEffect } from 'react';
 import type { PropostaResumo } from '@/services/propostaService';
@@ -9,18 +9,21 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [propostas, setPropostas] = useState<PropostaResumo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     fetchPropostas();
   }, []);
 
   async function fetchPropostas() {
+    setLoading(true);
+    setHasError(false);
     try {
       const data = await PropostaService.getPropostas();
       setPropostas(data);
     } catch (error) {
       console.error(error);
-      toast.error('Erro ao carregar propostas');
+      setHasError(true);
     } finally {
       setLoading(false);
     }
@@ -55,6 +58,24 @@ export default function Dashboard() {
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <p className="text-muted-foreground">A carregar propostas...</p>
+      </div>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4">
+        <AlertCircle className="h-10 w-10 text-red-500" />
+        <div className="text-center space-y-2">
+          <p className="font-medium">Não foi possível carregar as propostas</p>
+          <p className="text-sm text-muted-foreground">Verifique a sua ligação e tente novamente.</p>
+        </div>
+        <button
+          onClick={fetchPropostas}
+          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:brightness-110"
+        >
+          Tentar novamente
+        </button>
       </div>
     );
   }
@@ -130,7 +151,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between gap-4 mt-1.5">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-xs text-muted-foreground font-mono">{p.numero}</span>
-                    <span className="text-xs text-muted-foreground">{new Date(p.data).toLocaleDateString('pt-BR')}</span>
+                    <span className="text-xs text-muted-foreground">{new Date(p.data).toLocaleDateString('pt-MZ')}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <button onClick={() => navigate(`/proposta/${p.id}`)} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><ArrowRight className="h-4 w-4" /></button>

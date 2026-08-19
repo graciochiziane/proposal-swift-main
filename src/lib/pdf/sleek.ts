@@ -65,7 +65,7 @@ export async function renderSleek(
   doc.text(proposta.numero, pageWidth - accentW + 10, 22);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.text(new Date(proposta.data).toLocaleDateString('pt-BR'), pageWidth - accentW + 10, 29);
+  doc.text(new Date(proposta.data).toLocaleDateString('pt-MZ'), pageWidth - accentW + 10, 29);
 
   // Status badge on accent block
   const statusLabels: Record<string, string> = {

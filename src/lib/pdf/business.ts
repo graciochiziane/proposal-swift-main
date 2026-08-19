@@ -42,7 +42,7 @@ export async function renderBusiness(
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.text(`Proposta N.º ${proposta.numero}`, pageWidth - margin, y + 6, { align: 'right' });
-  doc.text(`Data: ${new Date(proposta.data).toLocaleDateString('pt-BR')}`, pageWidth - margin, y + 12, { align: 'right' });
+  doc.text(`Data: ${new Date(proposta.data).toLocaleDateString('pt-MZ')}`, pageWidth - margin, y + 12, { align: 'right' });
 
   // Subtle status label
   const statusLabels: Record<string, string> = {

@@ -161,7 +161,7 @@ export default function TenantDetailPage() {
   if (!tenant) return <div className="p-8 text-muted-foreground">Tenant não encontrado</div>;
 
   const initials = (name: string | null) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??';
-  const shortDate = (d: string) => new Date(d).toLocaleDateString('pt-PT');
+  const shortDate = (d: string) => new Date(d).toLocaleDateString('pt-MZ');
 
   return (
     <div className="p-6 space-y-6">
@@ -316,7 +316,7 @@ export default function TenantDetailPage() {
               <CardContent className="space-y-4">
                 {tenant.suspended_at && (
                   <div className="rounded-md bg-destructive/10 p-3 space-y-1">
-                    <p className="text-sm font-medium text-destructive">Suspenso em {new Date(tenant.suspended_at).toLocaleString('pt-PT')}</p>
+                    <p className="text-sm font-medium text-destructive">Suspenso em {new Date(tenant.suspended_at).toLocaleString('pt-MZ')}</p>
                     {tenant.suspension_reason && <p className="text-xs text-muted-foreground">Motivo: {tenant.suspension_reason}</p>}
                   </div>
                 )}
@@ -372,7 +372,7 @@ export default function TenantDetailPage() {
                           {m.role.toUpperCase()}
                         </span>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{m.profiles?.last_seen_at ? new Date(m.profiles.last_seen_at).toLocaleString('pt-PT') : 'Nunca'}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{m.profiles?.last_seen_at ? new Date(m.profiles.last_seen_at).toLocaleString('pt-MZ') : 'Nunca'}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{shortDate(m.joined_at)}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
@@ -410,7 +410,7 @@ export default function TenantDetailPage() {
                 <TableBody>
                   {auditLogs.map(l => (
                     <TableRow key={l.id}>
-                      <TableCell className="text-xs text-muted-foreground">{new Date(l.created_at).toLocaleString('pt-PT')}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{new Date(l.created_at).toLocaleString('pt-MZ')}</TableCell>
                       <TableCell className="font-medium">{l.action}</TableCell>
                       <TableCell className="text-muted-foreground">{l.admin_email}</TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">

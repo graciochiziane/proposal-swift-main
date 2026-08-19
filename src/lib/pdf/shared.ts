@@ -418,7 +418,7 @@ export function drawFooter(ctx: PDFContext) {
 
   // Right text (date)
   if (showDate) {
-    doc.text(new Date().toLocaleDateString('pt-BR'), pageWidth - margin, footerY, { align: 'right' });
+    doc.text(new Date().toLocaleDateString('pt-MZ'), pageWidth - margin, footerY, { align: 'right' });
   }
 }
 

@@ -101,7 +101,7 @@ export default function RevisaoProposta() {
           nuit: profile.nuit, endereco: profile.endereco, logotipo: profile.logotipo,
         });
       }
-    }).catch(() => {});
+    }).catch((err) => console.error('[RevisaoProposta] Error loading data:', err));
   }, []);
 
   useEffect(() => {
@@ -110,7 +110,7 @@ export default function RevisaoProposta() {
       if (client) {
         setClientInfo({ name: client.nome, company: client.empresa, email: client.email, phone: client.telefone });
       }
-    }).catch(() => {});
+    }).catch((err) => console.error('[RevisaoProposta] Error loading data:', err));
   }, [proposal?.client_id]);
 
   const getCompanyInfo = () => ({

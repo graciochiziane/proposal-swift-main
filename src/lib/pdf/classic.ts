@@ -37,7 +37,7 @@ export async function renderClassic(
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.text(`PROPOSTA N.º: ${proposta.numero}`, pageWidth - margin, 9, { align: 'right' });
-  doc.text(`Data de Emissão: ${new Date(proposta.data).toLocaleDateString('pt-BR')}`, pageWidth - margin, 15, { align: 'right' });
+  doc.text(`Data de Emissão: ${new Date(proposta.data).toLocaleDateString('pt-MZ')}`, pageWidth - margin, 15, { align: 'right' });
 
   y = headerH + 10;
 

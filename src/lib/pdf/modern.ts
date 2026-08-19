@@ -51,7 +51,7 @@ export async function renderModern(
   doc.setFontSize(8);
   doc.setTextColor(90, 95, 100);
   doc.text(`PROPOSTA N.º: ${proposta.numero}`, margin, y);
-  doc.text(`Data: ${new Date(proposta.data).toLocaleDateString('pt-BR')}`, pageWidth - margin, y, { align: 'right' });
+  doc.text(`Data: ${new Date(proposta.data).toLocaleDateString('pt-MZ')}`, pageWidth - margin, y, { align: 'right' });
   y += 8;
 
   // Separator

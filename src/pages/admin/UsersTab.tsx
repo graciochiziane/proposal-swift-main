@@ -113,7 +113,7 @@ export function UsersTab() {
                           )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{u.propostas_mes_count}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{new Date(u.created_at).toLocaleDateString('pt-PT')}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{new Date(u.created_at).toLocaleDateString('pt-MZ')}</TableCell>
                         {/* FIX 3.1: now renders last_seen_at */}
                         <TableCell className="text-xs text-muted-foreground">{timeAgo(u.last_seen_at)}</TableCell>
                         <TableCell>

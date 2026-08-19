@@ -55,7 +55,7 @@ export function AuditTab({ tenants }: { tenants: Tenant[] }) {
               <TableBody>
                 {auditLogs.map(l => (
                   <TableRow key={l.id}>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(l.created_at).toLocaleString('pt-PT')}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(l.created_at).toLocaleString('pt-MZ')}</TableCell>
                     <TableCell className="text-sm">{l.admin_email}</TableCell>
                     <TableCell className="font-medium text-sm">{l.action}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{l.target_table || '—'}</TableCell>

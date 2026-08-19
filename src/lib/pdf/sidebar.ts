@@ -139,7 +139,7 @@ export async function renderSidebar(
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
   doc.text(`N.º ${proposta.numero}`, pageWidth - margin, 14, { align: 'right' });
-  doc.text(`Data: ${new Date(proposta.data).toLocaleDateString('pt-BR')}`, pageWidth - margin, 21, { align: 'right' });
+  doc.text(`Data: ${new Date(proposta.data).toLocaleDateString('pt-MZ')}`, pageWidth - margin, 21, { align: 'right' });
 
   // "PROPOSTA COMERCIAL" badge
   doc.setFillColor(...primary);

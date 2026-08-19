@@ -120,7 +120,8 @@ export const OrganizationService = {
   _getStoredActiveOrg(userId: string): string | null {
     try {
       return localStorage.getItem(`propostaja_active_org_${userId}`);
-    } catch {
+    } catch (err) {
+      console.error("[organizationService] Error:", err);
       return null;
     }
   },
