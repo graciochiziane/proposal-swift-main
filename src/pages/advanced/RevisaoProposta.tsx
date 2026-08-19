@@ -114,7 +114,7 @@ export default function RevisaoProposta() {
   }, [proposal?.client_id]);
 
   const getCompanyInfo = () => ({
-    name: companyProfile?.empresa || organization?.name || 'Empresa',
+    name: companyProfile?.empresa || organization?.nome || 'Empresa',
     description: '',
     contact: companyProfile?.contacto || user?.email || '',
     nuit: companyProfile?.nuit || '',

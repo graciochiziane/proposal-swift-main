@@ -18,15 +18,15 @@ describe('Funções de cálculo', () => {
 
   test('calcularDesconto deve calcular desconto fixo corretamente', () => {
     const subtotal = 200;
-    const desconto = calcularDesconto(subtotal, 'fixo', 30);
+    const desconto = calcularDesconto(subtotal, 'valor', 30);
     expect(desconto).toBe(30);
   });
 
-  test('calcularTotal deve calcular corretamente o total com IVA', () => {
+  test('calcularTotal deve calcular corretamente o total com IVA 16% (Moçambique)', () => {
     const subtotal = 200;
     const descontoTipo: DescontoTipo = 'percentual';
     const descontoValor = 10;
-    const ivaPercentual = 17;
+    const ivaPercentual = 16; // P1-FIX: IVA real de Moçambique é 16%
 
     const { desconto, baseTributavel, iva, total } = calcularTotal(
       subtotal,
@@ -37,15 +37,15 @@ describe('Funções de cálculo', () => {
 
     expect(desconto).toBe(20);
     expect(baseTributavel).toBe(180);
-    expect(iva).toBeCloseTo(30.6, 1);
-    expect(total).toBeCloseTo(210.6, 1);
+    expect(iva).toBeCloseTo(28.8, 1); // 16% de 180 = 28.8
+    expect(total).toBeCloseTo(208.8, 1);
   });
 
   test('calcularTotal deve lidar com valores zero e negativos', () => {
     const subtotal = 0;
-    const descontoTipo: DescontoTipo = 'fixo';
+    const descontoTipo: DescontoTipo = 'valor'; // P1-FIX: era 'fixo' (não existe no enum)
     const descontoValor = 10;
-    const ivaPercentual = 17;
+    const ivaPercentual = 16; // P1-FIX: era 17 (incorreto)
 
     const { desconto, baseTributavel, iva, total } = calcularTotal(
       subtotal,
@@ -56,7 +56,7 @@ describe('Funções de cálculo', () => {
 
     expect(desconto).toBe(10);
     expect(baseTributavel).toBe(-10);
-    expect(iva).toBeCloseTo(-1.7, 1);
-    expect(total).toBeCloseTo(-11.7, 1);
+    expect(iva).toBeCloseTo(-1.6, 1); // 16% de -10 = -1.6
+    expect(total).toBeCloseTo(-11.6, 1);
   });
 });

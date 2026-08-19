@@ -93,8 +93,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // THEN fetch existing session
-    supabase.auth.getSession().then(({ data: { session: sess } }) => {
+    // THEN fetch existing session — P2-FIX: added .catch() to prevent infinite loading
+    supabase.auth.getSession().then(({ data: { session: sess }, error }) => {
+      if (error) {
+        console.error('[useAuth] getSession error:', error);
+      }
       setSession(sess);
       setUser(sess?.user ?? null);
       setLoading(false);
@@ -102,6 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (sess?.user) {
         refreshRole().catch(() => {/* silent */});
       }
+    }).catch((err) => {
+      console.error('[useAuth] getSession exception:', err);
+      setLoading(false); // Ensure loading state is cleared even on failure
     });
 
     return () => subscription.unsubscribe();

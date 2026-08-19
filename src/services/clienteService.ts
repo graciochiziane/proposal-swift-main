@@ -121,5 +121,35 @@ export const ClienteService = {
       console.error('Erro ao remover cliente:', error);
       throw error;
     }
+  },
+
+  /**
+   * P1-FIX: Obtém um cliente específico por ID.
+   * Necessário para RevisaoProposta.tsx que chama getClienteById.
+   * Antes não existia — IA gerava propostas sem contexto do cliente.
+   */
+  async getClienteById(id: string): Promise<Cliente | null> {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar cliente:', error);
+      throw error;
+    }
+
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      nome: data.nome,
+      email: data.email || '',
+      telefone: data.telefone || '',
+      empresa: data.empresa || '',
+      nuit: data.nuit || '',
+      endereco: data.endereco || '',
+    };
   }
 };

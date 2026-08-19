@@ -1,6 +1,6 @@
 import type { Proposta, Cliente, DonoProposta, PDFTemplate } from '@/types';
 import type { NarrativeSection } from './types';
-import { getTemplate } from './registry';
+import { getTemplate, isProTemplate } from './registry';
 import { gerarPDFNarrativa, seccoesToNarrative } from './narrativa';
 
 /**
@@ -8,6 +8,10 @@ import { gerarPDFNarrativa, seccoesToNarrative } from './narrativa';
  * Uses the template registry. Falls back to 'classic' if unknown.
  *
  * All templates now support narrative sections (AI proposals).
+ *
+ * P1-FIX: Enforces isProTemplate — PRO templates (sleek, sidebar, business)
+ * are downgraded to 'classic' for free/pro users. The caller can override
+ * by passing `forcePro=true` after verifying plan access.
  */
 export async function gerarPDF(
   proposta: Proposta,
@@ -15,8 +19,16 @@ export async function gerarPDF(
   dono?: DonoProposta,
   template: PDFTemplate = 'classic',
   narrative?: NarrativeSection[],
+  forcePro = false,
 ) {
-  const entry = getTemplate(template);
+  // P1-FIX: If template is PRO and caller didn't force, downgrade to classic
+  let actualTemplate = template;
+  if (!forcePro && isProTemplate(template)) {
+    console.warn(`[gerarPDF] Template '${template}' é PRO — usando 'classic' (forcePro=false)`);
+    actualTemplate = 'classic';
+  }
+
+  const entry = getTemplate(actualTemplate);
   await entry.render(proposta, cliente, dono, narrative);
 }
 
