@@ -150,11 +150,16 @@ export async function generateAllSections(params: {
     }
   }
 
-  // Only auto-conclude if all sections generated successfully
-  if (!hasErrors) {
-    await updateAdvancedProposalStatus(params.proposalId, 'concluida');
+  // FASE 3-FIX: NÃO auto-concluir — deixar o utilizador revisar primeiro.
+  // O status 'em_revisao' é mantido até o utilizador explicitamente concluir.
+  // Antes: auto-concluía sem revisão, removendo o passo de revisão do utilizador.
+  if (hasErrors) {
+    // Se houve erros, manter em 'em_revisao' para o utilizador ver o que falhou
+    await updateAdvancedProposalStatus(params.proposalId, 'em_revisao');
   }
-  params.onProgress?.(params.sections.length, params.sections.length, hasErrors ? 'Concluido com erros' : 'Concluido');
+  // Se não houve erros, manter 'em_revisao' — o utilizador deve revisar e
+  // explicitamente concluir na página de revisão.
+  params.onProgress?.(params.sections.length, params.sections.length, hasErrors ? 'Concluido com erros' : 'Pronto para revisão');
 
   return results;
 }

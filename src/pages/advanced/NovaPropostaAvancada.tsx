@@ -152,7 +152,8 @@ export default function NovaPropostaAvancada() {
         </div>
         {/* Step indicator */}
         <div className="hidden sm:flex items-center gap-2 text-sm">
-          <StepDot active={step === 'category'} done={['blueprint', 'client'].includes(step)} label="Categoria" />\n          <div className="w-6 h-px bg-border" />
+          <StepDot active={step === 'category'} done={['blueprint', 'client'].includes(step)} label="Categoria" />
+          <div className="w-6 h-px bg-border" />
           <StepDot active={step === 'blueprint'} done={['client'].includes(step)} label="Modelo" />
           <div className="w-6 h-px bg-border" />
           <StepDot active={step === 'client'} label="Detalhes" />
