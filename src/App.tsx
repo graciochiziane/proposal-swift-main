@@ -91,16 +91,14 @@ const App = () => (
                       <Route path="/proposta-avancada/:id" element={<PreencherProposta />} />
                       <Route path="/revisao-proposta/:id" element={<RevisaoProposta />} />
                       <Route path="/brand-profile" element={<BrandProfilePage />} />
-                      {/* CRM — Business only (CrmGate wraps all /crm/* routes) */}
-                      <Route path="/crm/*" element={<CrmGate><Routes>
-                        <Route path="/crm" element={<CRMDashboard />} />
-                        <Route path="/crm/contactos" element={<CRMContactos />} />
-                        <Route path="/crm/contactos/:id" element={<ClienteDetalhe />} />
-                        <Route path="/crm/pipeline" element={<Pipeline />} />
-                        <Route path="/crm/actividades" element={<Actividades />} />
-                        <Route path="/crm/follow-ups" element={<FollowUps />} />
-                        <Route path="/crm/insights" element={<Insights />} />
-                      </Routes></CrmGate>} />
+                      {/* CRM — Business only (CrmGate wraps each route) */}
+                      <Route path="/crm" element={<CrmGate><CRMDashboard /></CrmGate>} />
+                      <Route path="/crm/contactos" element={<CrmGate><CRMContactos /></CrmGate>} />
+                      <Route path="/crm/contactos/:id" element={<CrmGate><ClienteDetalhe /></CrmGate>} />
+                      <Route path="/crm/pipeline" element={<CrmGate><Pipeline /></CrmGate>} />
+                      <Route path="/crm/actividades" element={<CrmGate><Actividades /></CrmGate>} />
+                      <Route path="/crm/follow-ups" element={<CrmGate><FollowUps /></CrmGate>} />
+                      <Route path="/crm/insights" element={<CrmGate><Insights /></CrmGate>} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                     </Suspense>
