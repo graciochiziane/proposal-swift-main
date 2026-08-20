@@ -12,10 +12,11 @@
  * Order: prefer cheaper models first (used as default).
  */
 export const ALLOWED_GEMINI_MODELS: readonly string[] = [
-  "gemini-3.1-flash-lite",   // Default — cheapest, fastest
-  "gemini-2.5-flash",        // Legacy fallback (still used in some clients)
-  "gemini-2.0-flash",        // Older but stable
-  "gemini-1.5-flash",        // Oldest supported
+  "gemini-3.1-flash-lite",     // Default — cheapest, fastest
+  "gemini-3.1-pro-preview",    // Alias returned by API for some flash models
+  "gemini-2.5-flash",          // Legacy fallback (still used in some clients)
+  "gemini-2.0-flash",          // Older but stable
+  "gemini-1.5-flash",          // Oldest supported
 ];
 
 /**

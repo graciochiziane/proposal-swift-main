@@ -53,6 +53,8 @@ export async function generateSectionContent(
           content: data.content || '',
           warnings: data.warnings || [],
           missingInformation: data.missingInformation || [],
+          model: data.model || 'gemini-3.1-flash-lite',
+          tokensUsed: data.tokensUsed || 0,
         };
       }
 
@@ -124,14 +126,12 @@ export async function generateAllSections(params: {
         previousSections,
       });
 
-      // Save AI content to DB
-      // P0-C1/H12: usar modelo consistente com Edge Function (gemini-3.1-flash-lite)
-      // Tokens reais virão da Edge Function no futuro; por ora 0 (audit H10 tracking)
+      // Save AI content to DB — use real model and tokens from Edge Function
       await saveSectionAIContent(
         section.answerId,
         output.content,
-        'gemini-3.1-flash-lite',
-        0,
+        output.model || 'gemini-3.1-flash-lite',
+        output.tokensUsed || 0,
       );
 
       previousSections.push({ title: section.sectionTitle, content: output.content });

@@ -190,4 +190,6 @@ export interface AIGenerationOutput {
   content: string;
   warnings: string[];
   missingInformation: string[];
+  model?: string;
+  tokensUsed?: number;
 }
