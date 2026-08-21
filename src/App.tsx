@@ -34,6 +34,7 @@ const Pipeline = lazy(() => import("@/pages/crm/Pipeline"));
 const Actividades = lazy(() => import("@/pages/crm/Actividades"));
 const FollowUps = lazy(() => import("@/pages/crm/FollowUps"));
 const Insights = lazy(() => import("@/pages/crm/Insights"));
+const TemplateManager = lazy(() => import("@/pages/TemplateManager"));
 const Auth = lazy(() => import("@/pages/Auth"));
 const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
@@ -86,6 +87,7 @@ const App = () => (
                       {/* Admin routes */}
                       <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />
                       <Route path="/admin" element={<Admin />} />
+                      <Route path="/admin/templates" element={<TemplateManager />} />
                       {/* Advanced Proposals */}
                       <Route path="/proposta-avancada/nova" element={<NovaPropostaAvancada />} />
                       <Route path="/proposta-avancada/:id" element={<PreencherProposta />} />
