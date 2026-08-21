@@ -10,6 +10,9 @@ import {
   Plus, Save, Trash2, Eye, Loader2, AlertCircle,
   FileCode, Code, Upload,
 } from 'lucide-react';
+import CodeMirror from '@uiw/react-codemirror';
+import { html as htmlLang } from '@codemirror/lang-html';
+import { EditorView } from '@codemirror/view';
 import { PdfTemplateService, AVAILABLE_PLACEHOLDERS, renderTemplatePreview } from '@/services/pdfTemplateService';
 import type { PdfTemplate } from '@/services/pdfTemplateService';
 import type { Proposta, Cliente, DonoProposta } from '@/types';
@@ -17,7 +20,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 
@@ -229,7 +231,7 @@ export default function TemplateManager() {
               <Input value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Ex: Template clássico com cabeçalho azul" />
             </div>
 
-            {/* HTML textarea */}
+            {/* HTML Code Editor — CodeMirror 6 com syntax highlight */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label>HTML do Template *</Label>
@@ -239,12 +241,23 @@ export default function TemplateManager() {
                   </Button>
                 </div>
               </div>
-              <Textarea
-                value={html}
-                onChange={e => setHtml(e.target.value)}
-                placeholder="Cole aqui o HTML completo (com <style> inline)..."
-                className="font-mono text-xs min-h-[300px] max-h-[500px]"
-              />
+              <div className="border border-border rounded-lg overflow-hidden">
+                <CodeMirror
+                  value={html}
+                  onChange={value => setHtml(value)}
+                  extensions={[htmlLang(), EditorView.lineWrapping]}
+                  theme="light"
+                  height="400px"
+                  basicSetup={{
+                    lineNumbers: true,
+                    highlightActiveLine: true,
+                    autocompletion: true,
+                    bracketMatching: true,
+                    closeBrackets: true,
+                    indentOnInput: true,
+                  }}
+                />
+              </div>
               <p className="text-xs text-muted-foreground">
                 Crie o HTML no seu editor preferido (VS Code, CodePen, etc.) e cole aqui.
                 Use <code className="bg-muted px-1 rounded">{'{{placeholders}}'}</code> para dados dinâmicos.
