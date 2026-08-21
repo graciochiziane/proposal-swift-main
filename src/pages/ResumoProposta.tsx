@@ -5,6 +5,8 @@ import type { PropostaCompleta } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { calcularTotal } from '@/lib/calculos';
 import { gerarPDF, getAllTemplates } from '@/lib/pdf';
+import { PdfTemplateService, renderTemplate, renderHtmlToPdf } from '@/services/pdfTemplateService';
+import type { PdfTemplate as HtmlTemplate } from '@/services/pdfTemplateService';
 import { FileDown, FileText, Pencil, Copy, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { converterPropostaEmFactura, getFaturasPorProposta, atualizarStatusFatura } from '@/services/faturaService';
@@ -15,6 +17,9 @@ export default function ResumoProposta() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [template, setTemplate] = useState<PDFTemplate>('classic');
+  const [htmlTemplates, setHtmlTemplates] = useState<HtmlTemplate[]>([]);
+  const [selectedHtmlTemplateId, setSelectedHtmlTemplateId] = useState<string | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const [proposta, setProposta] = useState<PropostaCompleta | null>(null);
   const [dono, setDono] = useState<DonoProposta | null>(null);
@@ -25,6 +30,11 @@ export default function ResumoProposta() {
   const [showFaturarModal, setShowFaturarModal] = useState(false);
   const [dataVencimento, setDataVencimento] = useState('');
   const [savingFatura, setSavingFatura] = useState(false);
+
+  // Carregar templates HTML disponíveis
+  useEffect(() => {
+    PdfTemplateService.getTemplates().then(setHtmlTemplates).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -72,11 +82,30 @@ export default function ResumoProposta() {
     ? calcularTotal(proposta.subtotal, proposta.descontoTipo, proposta.descontoValor, proposta.ivaPercentual)
     : { desconto: 0, baseTributavel: 0, iva: 0, total: 0 };
 
-  const handlePDF = () => {
+  const handlePDF = async () => {
     if (!proposta || !dono || !cliente) {
       toast.error('Dados não carregados');
       return;
     }
+
+    // Se seleccionou um template HTML, usar o novo sistema
+    if (selectedHtmlTemplateId) {
+      setGeneratingPdf(true);
+      try {
+        const htmlTemplate = htmlTemplates.find(t => t.id === selectedHtmlTemplateId);
+        if (!htmlTemplate) throw new Error('Template não encontrado');
+        const rendered = renderTemplate(htmlTemplate.html, proposta, cliente, dono);
+        await renderHtmlToPdf(rendered, `Proposta-${proposta.numero}.pdf`);
+        toast.success('PDF gerado com template HTML');
+      } catch (err) {
+        toast.error('Erro ao gerar PDF: ' + (err instanceof Error ? err.message : ''));
+      } finally {
+        setGeneratingPdf(false);
+      }
+      return;
+    }
+
+    // Caso contrário, usar o sistema .ts antigo
     gerarPDF(proposta, cliente, dono, template);
   };
 
@@ -201,6 +230,20 @@ export default function ResumoProposta() {
               {getAllTemplates().find(t => t.id === template)?.nome ?? 'Template'}
             </button>
           </TemplateSelectorModal>
+          {htmlTemplates.length > 0 && (
+            <select
+              value={selectedHtmlTemplateId || ''}
+              onChange={e => setSelectedHtmlTemplateId(e.target.value || null)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
+            >
+              <option value="">Templates .ts (padrão)</option>
+              {htmlTemplates.map(t => (
+                <option key={t.id} value={t.id}>
+                  HTML: {t.nome}{t.is_system ? ' (sistema)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             onClick={() => navigate(`/proposta/${proposta.id}/gerar-ia`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold transition-all"
@@ -210,10 +253,11 @@ export default function ResumoProposta() {
           </button>
           <button
             onClick={handlePDF}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition-all"
+            disabled={generatingPdf}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition-all disabled:opacity-50"
           >
-            <FileDown className="h-4 w-4" />
-            PDF
+            {generatingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            {generatingPdf ? 'A gerar...' : 'PDF'}
           </button>
           <button
             onClick={() => navigate(`/proposta/editar/${proposta.id}`)}
