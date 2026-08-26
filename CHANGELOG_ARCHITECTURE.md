@@ -207,6 +207,55 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-26] — Redaction de credencial literal + criação do doc P0_C7
+
+**Tipo:** security + docs
+**Branch:** `feature/multi-user-hierarchy`
+**HEAD:** `382f8df`
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+- Criado `download/P0_C7_CREDENCIAIS_ROTACAO.md` (estava referenciado desde 2026-08-13 mas nunca existia — 427 linhas, 10 secções)
+- Redacted password literal `OperaOmnia#89` da linha 537 deste ficheiro (vulnerabilidade adicional identificada durante análise 2026-08-26)
+- Marcado M16 como parcialmente concluído (parte crítica resolvida por work anterior)
+
+#### Breaking Changes
+
+Nenhum — apenas docs.
+
+#### Ficheiros Criados
+
+- `/home/z/my-project/repos/proposal-swift-main/download/P0_C7_CREDENCIAIS_ROTACAO.md` — documento canónico de rotação de credenciais
+
+#### Ficheiros Alterados
+
+- `CHANGELOG_ARCHITECTURE.md` linha 537 — redact da password literal
+- `CHANGELOG_ARCHITECTURE.md` secção 5.3 (M16) — marcado como parcialmente concluído
+
+#### Testes
+
+- N/A (apenas alterações de documentação)
+
+#### Segurança
+
+- Password literal exposta desde 2026-08-13 neste ficheiro — agora redacted
+- Inventory completo de 10 credenciais a rotacionar documentado em P0_C7_CREDENCIAIS_ROTACAO.md
+- Procedimento de purge do git history formalizado (destrutivo, requer acção manual)
+
+#### Pendências
+
+- Execução manual da rotação de credenciais (ver P0_C7_CREDENCIAIS_ROTACAO.md)
+- Execução do `git filter-repo` para purgar `.env` do history (destrutivo, requer backup + force-push)
+- Edge Function deployment — P0+P1 fixes ainda não deployed em produção
+
+#### Rollback
+
+- `git revert 382f8df` para reverter o commit do doc
+- Edit manual para restaurar linha 537 com a password literal (NÃO recomendado)
+
+---
+
 ### [2026-08-13] — Plan Features System + Propostas Avançadas Tab + Admin UI
 
 **Tipo:** feat (new functionality)
@@ -534,7 +583,7 @@ Nenhum — todos os 12 P1 resolvidos.
 
 1. **Rotação de credenciais (manual)** — ver `download/P0_C7_CREDENCIAIS_ROTACAO.md`:
    - Gemini API key antiga (`AIzaSyBZiC6M...`) ainda activa — rotacionar no Google Cloud Console
-   - DB password `OperaOmnia#89` ainda válida — rotacionar no Supabase Dashboard
+   - DB password `[REDACTED em 2026-08-26 — ver P0_C7_CREDENCIAIS_ROTACAO.md]` ainda válida — rotacionar no Supabase Dashboard
    - service_role key, Resend key, GitHub PAT, JWT secret — todos rotacionar
 2. **Purge do git history** — secrets ainda recuperáveis via `git log --all -p`. Executar `git filter-repo` (instruções no documento).
 3. **Edge Function deployment** — os ficheiros em `supabase/functions/` foram alterados mas precisam de deploy via `supabase functions deploy` ou GitHub Actions.
@@ -794,7 +843,7 @@ Todos os 12 P1 foram corrigidos no branch `fix/p1-security-high` (que herda os P
 | M13 | Unificar cores de brand entre templates | ⏳ |
 | M14 | Unificar locale de data (pt-MZ em todo o lado) | ⏳ |
 | M15 | Refactor `sidebar.ts` para usar `formatMZNLocal` partilhado | ⏳ |
-| M16 | Adicionar `.catch()` em `useAuth.getSession` e `signOut` | ⏳ |
+| M16 | Adicionar `.catch()` em `useAuth.getSession` e `signOut` | ✅ Concluído (getSession) / ⚠️ signOut intencionalmente sem catch (silenciaria erros do utilizador) |
 | M17 | Sanitizar `pathname` em `useActivityTracker` (remover query strings) | ⏳ |
 | M18 | Adicionar `coverage` config em `vitest.config.ts` | ⏳ |
 
