@@ -207,6 +207,91 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-28] — M4 completo: regenerar types.ts via `supabase gen types`
+
+**Tipo:** type safety / bug fix
+**Branch:** `feature/multi-user-hierarchy`
+**HEAD:** `<a definir no commit>`
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+- Regenerado `src/integrations/supabase/types.ts` via `npx supabase gen types typescript --project-id ewlkdrwrespnxyddwtgo` (Supabase CLI v2.116.0)
+- Ficheiro passou de 1191 linhas (stale 2026-08-19) para 1922 linhas (+62%)
+- 1441 adições, 712 remoções no diff vs versão anterior
+- **Tabela nova adicionada:** `pdf_templates` (com colunas `html`, `is_system`, `is_active`, `plan_tier`, `sort_order`, etc.)
+- **Tabela renomeada:** `graphql_public` → `graphql` (interno Supabase)
+- **Funções RPC novas populadas:** `accept_invitation`, `admin_most_active_users`, `admin_remove_member`, `admin_toggle_suspend`, `transfer_ownership`, `upsert_plan_feature`, etc.
+- **Relationships agora populadas** com `foreignKeyName`/`columns`/`isOneToOne` (antes vazias `[]`)
+
+#### Breaking Changes
+
+Nenhuma — ficheiro de tipos compile-time substituído por versão gerada oficialmente pelo Supabase CLI. Não afecta runtime nem schema.
+
+#### Análise de Impacto
+
+- **Erros TS antes do M4 completo** (após M4a): **315** (incluindo ~255 em cascata revelados pelo fix sintáctico)
+- **Erros TS após M4 completo:** **127**
+- **Redução:** **188 erros eliminados** (~60% de redução global)
+- Caso paradigmático: `src/services/propostaService.ts` passou de **45 → 6 erros** (redução de 87%)
+  - 3 erros remanescentes são unused vars (TS6133/TS6196) — fix trivial
+  - 3 erros são bugs de tipo reais (TS2345/TS2352/TS2322) que precisam fix individual
+- Distribuição residual por ficheiro (top 5):
+  - `src/lib/__tests__/calculos.test.ts` (19) — falta `@types/jest`/`@types/vitest`
+  - `src/pages/admin/MetricsTab.tsx` (17) — bugs de tipo pré-existentes
+  - `src/pages/Propostas.tsx` (8) — unused vars + bugs de tipo
+  - `src/pages/GerarPropostaIA.tsx` (7) — bugs de tipo pré-existentes
+  - `src/services/propostaService.ts` (6) — 3 unused + 3 bugs de tipo reais
+- Os erros residuais são maioritariamente:
+  1. Unused imports/vars (TS6133/TS6196) — fix trivial
+  2. Falta de `@types/jest` em ficheiros de teste (TS2582/TS2304)
+  3. Bugs de tipo reais em services/components que precisam fix individual
+
+#### Ficheiros Alterados
+
+- `src/integrations/supabase/types.ts` — substituição completa (1191 → 1922 linhas)
+
+#### Risco
+
+**Baixo.** Ficheiro compile-time gerado oficialmente pelo Supabase CLI. Schema reflectido é o do projecto Supabase activo (`ewlkdrwrespnxyddwtgo`).
+
+#### Pendências
+
+- **Findings de configuração detectados** (documentar em P3 separado):
+  1. `supabase/config.toml` tem `project_id = "ytbgfrbhyclnfdftmnoy"` (legacy/antigo) — deveria ser `ewlkdrwrespnxyddwtgo`
+  2. `PROJETO_STATUS.md` referencia `https://ytbgfrbhyclnfdftmnoy.supabase.co` (legacy/antigo)
+  3. `.env` histórico (commit `a02cca8`) também tinha `ytbgfrbhyclnfdftmnoy` (legacy/antigo)
+  - Conclusão: projecto foi migrado de `ytbgfrbhyclnfdftmnoy` → `ewlkdrwrespnxyddwtgo` em momento não documentado; ficheiros de configuração não foram actualizados.
+  - Acção: corrigir `supabase/config.toml` e `PROJETO_STATUS.md` num commit separado (item P3 novo).
+- **Limpeza de unused vars** — fix trivial em ficheiros como `propostaService.ts` (3 unused), `useAuth.tsx` (1 unused), `UserProfile.tsx` (1 unused), `pages/Admin.tsx` (1 unused), etc. Pode ser feito em batch num commit de lint cleanup.
+- **Fix dos bugs de tipo reais** — 6 erros em `propostaService.ts` (3 unused + 3 reais), 17 em `MetricsTab.tsx`, etc. Item separado.
+
+#### Rollback
+
+```bash
+git checkout HEAD~1 -- src/integrations/supabase/types.ts
+# ou
+git reset --hard checkpoint/2026-08-28-pre-m4-full
+```
+
+#### Testes
+
+- `node_modules/.bin/tsc --noEmit -p tsconfig.app.json`:
+  - **Antes (após M4a):** 315 erros TS
+  - **Após M4 completo:** 127 erros TS
+  - **Redução:** 188 erros eliminados (~60%)
+- Sem alterações em runtime — types.ts é compile-time only
+- Testes unitários não afectados
+
+#### Notas de Segurança
+
+- Access token Supabase (`sbp_***`) usado exclusivamente via variável de ambiente `SUPABASE_ACCESS_TOKEN` no comando `npx supabase gen types`
+- Token NÃO foi echoado em output, NÃO foi gravado em ficheiro, NÃO foi commitado
+- ⚠️ Token deve ser **revogado pelo utilizador** após conclusão do trabalho (ver `download/P0_C7_CREDENCIAIS_ROTACAO.md` secção 5)
+- DB password `OperaOmnia#89` continua exposto (em P0-C7, rotação pendente pelo utilizador)
+
+---
+
 ### [2026-08-28] — M4a: fix sintáctico duplicates em types.ts (subset de M4)
 
 **Tipo:** type safety / bug fix
@@ -1001,7 +1086,7 @@ Todos os 12 P1 foram corrigidos no branch `fix/p1-security-high` (que herda os P
 | M1 | Adicionar verificação dupla client-side em services admin | ⏳ |
 | M2 | Adoptar React Query em todos os services | ⏳ |
 | M3 | Migrar PDF generation para server-side (ou manter client mas com Blob return) | ⏳ |
-| M4 | Regenerar `types.ts` via `supabase gen types typescript` | ⚠️ Parcial — fix sintáctico dos duplicates feito (M4a); regeneração completa pendente de access token Supabase |
+| M4 | Regenerar `types.ts` via `supabase gen types typescript` | ✅ Concluído (M4a fix sintáctico + M4 completo regeneração via `supabase gen types` para project `ewlkdrwrespnxyddwtgo`) |
 | M5 | Validar `org_id` em localStorage antes de usar | ⏳ |
 | M6 | Limitar `resend` de invites (max 3 retries, não estender indefinidamente) | ⏳ |
 | M7 | Adicionar rate limiting em Edge Functions IA (Upstash Redis) | ⏳ |
