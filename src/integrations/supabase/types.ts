@@ -1148,10 +1148,9 @@ export type Database = {
       get_plan_feature_limit: { Args: { p_plano: Database['public']['Enums']['plan_tier'], p_feature_key: string }; Returns: number }
       get_plan_features: { Args: { p_plano: Database['public']['Enums']['plan_tier'], feature_key: string, enabled: boolean, limit_value: number }; Returns: any }
       handle_new_user: { Args: {  }; Returns: any }
-      has_org_role_min: { Args: { p_org_id: string, p_user_id: string, p_min_role: Database['public']['Enums']['org_role'], p_min_role: Database['public']['Enums']['org_role'] }; Returns: boolean }
+      has_org_role_min: { Args: { p_org_id: string, p_user_id: string, p_min_role: Database['public']['Enums']['org_role'] }; Returns: boolean }
       has_org_role_min_in_org: { Args: { p_org_id: string, p_min_role: Database['public']['Enums']['org_role'] }; Returns: boolean }
       has_plan_feature: { Args: { p_plano: Database['public']['Enums']['plan_tier'], p_feature_key: string }; Returns: boolean }
-      has_role: { Args: { _user_id: string, p_user_id: string, _role: Database['public']['Enums']['app_role'], p_role: string }; Returns: boolean }
       has_role: { Args: { _user_id: string, p_user_id: string, _role: Database['public']['Enums']['app_role'], p_role: string }; Returns: boolean }
       is_platform_admin_email: { Args: { p_email: string }; Returns: boolean }
       log_admin_deletion: { Args: {  }; Returns: any }
@@ -1182,7 +1181,10 @@ export type Database = {
   }
 }
 
-type SupabaseClient = import('@supabase/supabase-js').SupabaseClient<Database>
+// FIXME(M4): types.ts está stale — Relationships vazias causam inferência `never` em joins
+// como .select('*, proposal_items(*)') em propostaService.ts.
+// Solução completa: regenerar via `supabase gen types` (requer access token Supabase).
+// Este fix remove apenas duplicates sintácticos; não altera schema nem Relationships.
 
 export type Tables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row']
 export type TablesInsert<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Insert']

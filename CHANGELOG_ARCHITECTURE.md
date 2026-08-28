@@ -207,6 +207,75 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-28] — M4a: fix sintáctico duplicates em types.ts (subset de M4)
+
+**Tipo:** type safety / bug fix
+**Branch:** `feature/multi-user-hierarchy`
+**HEAD:** `<a definir no commit>`
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+- Removido duplicate `p_min_role` na declaração de `has_org_role_min` (linha 1151 — chaves duplicadas no mesmo objecto `Args`)
+- Removida 2ª definição de `has_role` (linhas 1154-1155 — função definida 2x no mesmo bloco `Functions`)
+- Removida declaração `type SupabaseClient = ...` não usada (linha 1185)
+- Adicionado comentário `// FIXME(M4)` a documentar que types.ts está stale e precisa regeneração completa
+- Adicionado `supabase/.temp/` ao `.gitignore` (artefactos do CLI não devem ser commitados)
+- Removidos ficheiros `supabase/.temp/cli-latest` e `supabase/.temp/linked-project.json` (criados por `npx supabase` em sessão anterior, estavam em staged)
+
+#### Breaking Changes
+
+Nenhuma — fix é puramente sintáctico, não altera schema nem tipos reais.
+
+#### Análise de Impacto
+
+- **Erros TS eliminados:** 5 (4× TS2300 Duplicate identifier + 1× TS6196 unused)
+- **Erros TS revelados em cascata:** ~255 — todos pré-existentes mas mascarados porque types.ts não compilava
+  - Padrão dominante: `Property 'X' does not exist on type 'never'` em services que fazem joins Supabase (`propostaService`, `analyticsService`, `invitationService`, `profileService`, `clienteService`, `faturaService`, etc.)
+  - **Causa raiz:** `Relationships: []` vazias em definições de tabelas no types.ts (ex.: `proposals` linha 954, `proposal_items` linha 805)
+  - Quando supabase-js faz `.select('*, proposal_items(*)')` e a relação não está declarada no tipo, o TypeScript infere como `never`
+- **Resolução definitiva:** M4 completo (regenerar types via `supabase gen types`) — pendente de access token Supabase
+
+#### Ficheiros Alterados
+
+- `src/integrations/supabase/types.ts` — 3 remoções + 4 linhas de comentário FIXME
+- `.gitignore` — adicionada regra `supabase/.temp/`
+- `supabase/.temp/cli-latest` — removido (não tracked anteriormente)
+- `supabase/.temp/linked-project.json` — removido (não tracked anteriormente)
+
+#### Risco
+
+**Muito baixo.** Fix puramente sintáctico em ficheiro de tipos compile-time. Não afecta runtime nem schema.
+
+#### Pendências
+
+- **M4 completo:** regenerar `types.ts` via `npx supabase gen types typescript --project-id <ref>` (requer access token Supabase que não está disponível no sandbox)
+  - Vai popular `Relationships` correctamente e resolver os ~255 erros em cascata
+  - Project ref canónico: `ytbgfrbhyclnfdftmnoy` (em `supabase/config.toml` e `PROJETO_STATUS.md`)
+  - ⚠️ Conflito detectado: `CHANGELOG_ARCHITECTURE.md` (escrito em sessão anterior) referia `ewlkdrwrespnxyddwtgo` — projecto Supabase diferente. Usar `ytbgfrbhyclnfdftmnoy` como canónico até confirmação do utilizador.
+
+#### Rollback
+
+```bash
+git checkout HEAD~1 -- src/integrations/supabase/types.ts .gitignore
+# ou
+git reset --hard checkpoint/2026-08-28-pre-m4
+```
+
+#### Testes
+
+- `node_modules/.bin/tsc --noEmit -p tsconfig.app.json`:
+  - **Antes do fix:** types.ts tinha 5 erros sintácticos (TS2300 ×4 + TS6196 ×1) que bloqueavam análise de dependências
+  - **Após o fix:** types.ts compila. Erros em cascata revelados (não ocultados — Master Prompt secção 21)
+- Sem alterações em runtime — testes unitários não afectados
+
+#### Notas de Segurança
+
+- Não foram expostas credenciais neste commit
+- `supabase/.temp/` continha apenas `cli-latest` (versão do CLI) e `linked-project.json` (metadados do projecto) — sem secrets
+
+---
+
 ### [2026-08-26] — M18: vitest coverage config
 
 **Tipo:** test infrastructure
@@ -932,7 +1001,7 @@ Todos os 12 P1 foram corrigidos no branch `fix/p1-security-high` (que herda os P
 | M1 | Adicionar verificação dupla client-side em services admin | ⏳ |
 | M2 | Adoptar React Query em todos os services | ⏳ |
 | M3 | Migrar PDF generation para server-side (ou manter client mas com Blob return) | ⏳ |
-| M4 | Regenerar `types.ts` via `supabase gen types typescript` | ⏳ |
+| M4 | Regenerar `types.ts` via `supabase gen types typescript` | ⚠️ Parcial — fix sintáctico dos duplicates feito (M4a); regeneração completa pendente de access token Supabase |
 | M5 | Validar `org_id` em localStorage antes de usar | ⏳ |
 | M6 | Limitar `resend` de invites (max 3 retries, não estender indefinidamente) | ⏳ |
 | M7 | Adicionar rate limiting em Edge Functions IA (Upstash Redis) | ⏳ |
