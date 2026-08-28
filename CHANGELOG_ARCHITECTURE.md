@@ -207,6 +207,55 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-26] — M18: vitest coverage config
+
+**Tipo:** test infrastructure
+**Branch:** `feature/multi-user-hierarchy`
+**HEAD:** `<a definir no commit>`
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+- Adicionada config `coverage` em `vitest.config.ts` usando `v8` provider (padrão Vitest 3.x)
+- Adicionada dependência `@vitest/coverage-v8@3.2.4` em `devDependencies` (versão correspondente a `vitest@^3.2.4`)
+- Adicionado script `test:coverage` em `package.json`
+- Adicionado `coverage/` ao `.gitignore` (output não é commitado)
+- Reporters: `text` (console), `json` (CI), `html` (local dev)
+- **Sem thresholds enforcement** — cobertura actual é ~0% (apenas 5 testes em `calculos.test.ts`), falhar build seria contraproducente
+- Verify: `bun run test:coverage` → 5 tests pass + 100% coverage em `calculos.ts`
+
+#### Breaking Changes
+
+Nenhum — `test` script original mantido. `test:coverage` é novo e opcional.
+
+#### Ficheiros Alterados
+
+- `vitest.config.ts` — adicionada secção `coverage` dentro de `test` (24 linhas)
+- `package.json` — adicionado script `test:coverage` + dep `@vitest/coverage-v8@3.2.4`
+- `.gitignore` — adicionada linha `coverage/` (na secção sandbox artifacts)
+- `bun.lock` — auto-actualizado por `bun add`
+
+#### Testes
+
+- `bun run test:coverage` — ✅ 5 tests pass, 100% coverage em `calculos.ts` (único ficheiro com testes)
+- Coverage report HTML gerado em `coverage/index.html` (verificado, depois apagado para não commitar)
+
+#### Segurança
+
+N/A — item de infra-estrutura de testes, sem impacto em produção.
+
+#### Rollback
+
+- `git revert HEAD` para reverter a adição da config
+- Alternativamente: remover a secção `coverage` do `vitest.config.ts` e o script `test:coverage` do `package.json`
+
+#### Notas
+
+- **Sem thresholds enforcement** — item separado poderia adicionar thresholds (ex: 80% mínimo) quando cobertura for significativa. Adicionar agora com 0% de cobertura iria falhar todos os builds.
+- **Exclusões:** testes próprios, setup, types gerados (`types.ts`), components UI (shadcn gerado), `main.tsx`, `vite-env.d.ts`, `App.tsx` — estes não são código de aplicação que precisa de testes.
+
+---
+
 ### [2026-08-26] — M17: sanitize pathname em useActivityTracker
 
 **Tipo:** security
@@ -897,7 +946,7 @@ Todos os 12 P1 foram corrigidos no branch `fix/p1-security-high` (que herda os P
 | M15 | Refactor `sidebar.ts` para usar `formatMZNLocal` partilhado | ⏳ |
 | M16 | Adicionar `.catch()` em `useAuth.getSession` e `signOut` | ✅ Concluído (getSession) / ⚠️ signOut intencionalmente sem catch (silenciaria erros do utilizador) |
 | M17 | Sanitizar `pathname` em `useActivityTracker` (remover query strings) | ✅ Concluído (sanitizePath helper) |
-| M18 | Adicionar `coverage` config em `vitest.config.ts` | ⏳ |
+| M18 | Adicionar `coverage` config em `vitest.config.ts` | ✅ Concluído (v8 provider + test:coverage script) |
 
 ### 5.4 P3 — Longo Prazo (14 findings low + 9 info)
 

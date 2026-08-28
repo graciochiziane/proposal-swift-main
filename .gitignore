@@ -36,3 +36,6 @@ skills/
 AGENT_GUIDELINES.md
 playwright-fixture.ts
 bun.lockb
+
+# Test coverage output (M18 — added 2026-08-26)
+coverage/
