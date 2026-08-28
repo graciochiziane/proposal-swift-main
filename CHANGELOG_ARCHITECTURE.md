@@ -207,6 +207,58 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-26] — M17: sanitize pathname em useActivityTracker
+
+**Tipo:** security
+**Branch:** `feature/multi-user-hierarchy`
+**HEAD:** `<a definir no commit>`
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+- Adicionada função local `sanitizePath(pathname)` no hook `useActivityTracker`
+- Strip de query string e hash fragment (split em `?` ou `#`)
+- Validação que começa com `/` (fallback para `/`)
+- Cap de comprimento em 500 chars (previne DoS em INSERTs em `user_activity.page`)
+- Defensivo: `location.pathname` do react-router-dom já retorna pathname limpo, mas isto protege contra refactors futuros
+
+#### Breaking Changes
+
+Nenhum — interface pública do hook não mudou.
+
+#### Ficheiros Alterados
+
+- `src/hooks/useActivityTracker.tsx` — adicionada função `sanitizePath` (não exportada) + linha 45 alterada para chamar `sanitizePath(location.pathname)` em vez de `location.pathname` directo
+
+#### Testes
+
+- `eslint src/hooks/useActivityTracker.tsx` — ✅ 0 errors
+- `tsc --noEmit -p tsconfig.app.json` em `useActivityTracker.tsx` — ✅ 0 errors neste ficheiro
+- ⚠️ Pre-existing: 6 errors TS em `propostaService.ts` (causados por `types.ts` stale — ver M4 pendente)
+
+#### Segurança
+
+- Prevenção de DoS em `user_activity.page` column (cap 500 chars)
+- Prevenção de path injection (validação `/` prefix)
+- Defense in depth: não depende do comportamento do react-router
+
+#### Rollback
+
+- `git revert HEAD` para reverter a adição de `sanitizePath`
+
+#### Conflito TS detectado
+
+- `package.json` linha 28: `"typescript": "^7.0.2"` — mas o código foi escrito para TS 5.8 (per CHANGELOG secção 2)
+- TS 7.0.2 quebra ESLint (TypeError: Cannot read properties of undefined (reading 'Cjs') em `@typescript-eslint/typescript-estree`)
+- **Workaround neste sandbox:** instalei TS 5.8.3 localmente para validar
+- **Pendência:** decidir se `package.json` é actualizado para `^5.8.3` ou se código/types são actualizados para TS 7 (item separado, não misturado com M17)
+
+#### ADRs Relacionados
+
+- ADR-006 (Tipos TypeScript via `supabase gen types`) — agora `types.ts` stale causa erros TS em `propostaService.ts`. M4 continua pendente.
+
+---
+
 ### [2026-08-26] — Redaction de credencial literal + criação do doc P0_C7
 
 **Tipo:** security + docs
@@ -844,7 +896,7 @@ Todos os 12 P1 foram corrigidos no branch `fix/p1-security-high` (que herda os P
 | M14 | Unificar locale de data (pt-MZ em todo o lado) | ⏳ |
 | M15 | Refactor `sidebar.ts` para usar `formatMZNLocal` partilhado | ⏳ |
 | M16 | Adicionar `.catch()` em `useAuth.getSession` e `signOut` | ✅ Concluído (getSession) / ⚠️ signOut intencionalmente sem catch (silenciaria erros do utilizador) |
-| M17 | Sanitizar `pathname` em `useActivityTracker` (remover query strings) | ⏳ |
+| M17 | Sanitizar `pathname` em `useActivityTracker` (remover query strings) | ✅ Concluído (sanitizePath helper) |
 | M18 | Adicionar `coverage` config em `vitest.config.ts` | ⏳ |
 
 ### 5.4 P3 — Longo Prazo (14 findings low + 9 info)
