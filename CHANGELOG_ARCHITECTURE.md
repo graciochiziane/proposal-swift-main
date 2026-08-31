@@ -207,6 +207,64 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-28] — Lote de 3 fixes: P3-config + test types + lint cleanup
+
+**Tipo:** config fix / test fix / lint cleanup (3 commits)
+**Branch:** `feature/multi-user-hierarchy`
+**Commits:** `9d2ad23` (config), `00ee789` (test), `5a956d2` (lint)
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Commit 1 — `9d2ad23` fix(config): P3 — actualizar project ref legacy
+
+- `supabase/config.toml`: project_id `ytbgfrbhyclnfdftmnoy` → `ewlkdrwrespnxyddwtgo`
+- `PROJETO_STATUS.md`: URL Supabase actualizada
+- Risco nulo: config é metadata do CLI; app usa `VITE_SUPABASE_URL` (client.ts)
+
+#### Commit 2 — `00ee789` test(types): fix erros TS em calculos.test.ts
+
+- Import explícito `describe/test/expect` de `vitest` (globals: true não dava tipos ao TS)
+- Test objects completos com `id, nome, subtotal` (exigidos por `ItemProposta`)
+- 19 erros TS eliminados; `bun run test` → 5/5 pass
+
+#### Commit 3 — `5a956d2` chore(lint): remover 20 vars/imports não usados
+
+- 10 ficheiros, todos verificados individualmente (leitura de código + tsc)
+- Casos notáveis: `const [, setStep]` (setStep usado em 3 locais); params `_`-prefix em advancedPdfRenderer (assinaturas preservadas); `isProTemplate` removido do TemplateSelectorModal (M12 enforcement permanece pendente — componente usa `t.pro` para badge, mas não bloqueia selecção PRO por plano)
+- 20 erros TS eliminados (evolução: 127 → 108 → 88)
+
+#### Breaking Changes
+
+Nenhuma — remoção de código morto, import de testes, e actualização de config.
+
+#### Análise de Impacto
+
+- **Evolução de erros TS nesta sessão:** 127 → 88 (39 eliminados)
+- **ESLint:** 6 problemas pre-existing nos ficheiros tocados — **confirmado via git stash roundtrip que zero foram introduzidos por estes edits**:
+  - `Organizacao.tsx:44` — `any` (pre-existing, Master Prompt secção 21: não usar any — fix pendente)
+  - `advancedPdfRenderer.ts:396-398` — prefer-const r/g/b (pre-existing)
+  - `propostaService.ts:53` — interface vazia `PropostaCompleta extends Proposta {}` (pre-existing)
+  - `useAuth.tsx:143` — react-refresh warning (pre-existing)
+
+#### Ficheiros Alterados
+
+- Commit 1: `supabase/config.toml`, `PROJETO_STATUS.md`
+- Commit 2: `src/lib/__tests__/calculos.test.ts`
+- Commit 3: `propostaService.ts`, `UserProfile.tsx`, `TemplateSelectorModal.tsx`, `useAuth.tsx`, `advancedPdfRenderer.ts`, `narrativa.ts`, `Admin.tsx`, `GerarPropostaIA.tsx`, `Organizacao.tsx`, `Propostas.tsx`
+
+#### Rollback
+
+```bash
+git revert 9d2ad23 00ee789 5a956d2  # inverte os 3 commits
+```
+
+#### Testes
+
+- `tsc --noEmit`: 127 → 88 erros (0 novos)
+- `eslint` (10 ficheiros alterados): 6 problemas pre-existing, 0 novos (confirmado)
+- `vitest`: 5/5 tests pass
+
+---
+
 ### [2026-08-28] — M4 completo: regenerar types.ts via `supabase gen types`
 
 **Tipo:** type safety / bug fix
