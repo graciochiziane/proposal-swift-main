@@ -5,7 +5,7 @@
 - Tailwind CSS + lucide-react icons
 - PostHog (analytics + session replay 30%)
 - Deploy: Vercel (https://proposta2.vercel.app)
-- Supabase: https://ytbgfrbhyclnfdftmnoy.supabase.co
+- Supabase: https://ewlkdrwrespnxyddwtgo.supabase.co
 - Admin: graciochiziane@gmail.com
 - GitHub: https://github.com/graciochiziane/proposal-swift-main
 
