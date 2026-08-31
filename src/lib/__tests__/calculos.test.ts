@@ -1,11 +1,12 @@
+import { describe, test, expect } from 'vitest';
 import { calcularSubtotal, calcularDesconto, calcularTotal } from '../calculos';
 import { DescontoTipo, ItemProposta } from '@/types';
 
 describe('Funções de cálculo', () => {
   test('calcularSubtotal deve calcular corretamente o subtotal', () => {
     const itens: ItemProposta[] = [
-      { quantidade: 2, precoUnitario: 50 },
-      { quantidade: 3, precoUnitario: 30 },
+      { id: 'item-1', nome: 'Serviço A', quantidade: 2, precoUnitario: 50, subtotal: 100 },
+      { id: 'item-2', nome: 'Serviço B', quantidade: 3, precoUnitario: 30, subtotal: 90 },
     ];
     expect(calcularSubtotal(itens)).toBe(190);
   });
