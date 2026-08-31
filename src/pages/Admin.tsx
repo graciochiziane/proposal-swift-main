@@ -7,7 +7,6 @@ import { Navigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Activity, Users, Building2, Shield } from 'lucide-react';
 import { MetricsTab } from './admin/MetricsTab';

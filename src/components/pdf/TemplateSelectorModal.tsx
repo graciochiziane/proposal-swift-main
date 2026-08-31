@@ -1,7 +1,7 @@
 import React from 'react';
 import { Check, Crown, FileText } from 'lucide-react';
 import type { PDFTemplate } from '@/types';
-import { getAllTemplates, isProTemplate } from '@/lib/pdf';
+import { getAllTemplates } from '@/lib/pdf';
 import {
   Dialog,
   DialogContent,

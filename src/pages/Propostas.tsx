@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Filter, Eye, Copy, Trash2, Loader2,
-  FileText, TrendingUp, BarChart3, Calendar, ChevronDown,
+  FileText, BarChart3, Calendar, ChevronDown,
   MoreHorizontal, FileCheck, CheckCircle, XCircle, Clock
 } from 'lucide-react';
 import { PropostaService, formatMZN } from '@/services/propostaService';

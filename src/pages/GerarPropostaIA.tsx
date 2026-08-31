@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import {
   Loader2, Sparkles, FileText, RotateCw, Save,
-  FileDown, ArrowLeft, Eye, EyeOff, Info, Zap,
+  ArrowLeft, Info,
   CheckCircle2, ChevronRight, Download, FileSpreadsheet,
 } from 'lucide-react';
 import { calcularTotal } from '@/lib/calculos';
@@ -47,7 +47,7 @@ export default function GerarPropostaIA() {
   const [editBuffer, setEditBuffer] = useState<Record<string, string>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [, setStep] = useState<1 | 2 | 3>(1);
 
   // Auto-detect sector from cotation items
   useEffect(() => {

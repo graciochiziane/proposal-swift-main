@@ -157,7 +157,7 @@ export async function gerarPDFNarrativa(
   proposta: Proposta,
   dono: DonoProposta,
   seccoes: Record<string, string>,
-  template: PDFTemplate = 'sleek',
+  _template: PDFTemplate = 'sleek',
   includedSections?: Record<string, boolean>,
 ) {
   const doc = new jsPDF();

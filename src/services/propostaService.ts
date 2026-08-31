@@ -2,7 +2,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { calcularSubtotal, calcularTotal } from '@/lib/calculos';
 import type { ItemProposta, DescontoTipo, Proposta } from '@/types';
 import type { Database } from '@/integrations/supabase/types';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { OrganizationService } from './organizationService';
 
 // ── Supabase type aliases ──
@@ -10,7 +9,6 @@ type ProposalRow = Database['public']['Tables']['proposals']['Row'];
 type ProposalInsert = Database['public']['Tables']['proposals']['Insert'];
 type ProposalItemRow = Database['public']['Tables']['proposal_items']['Row'];
 type ProposalItemInsert = Database['public']['Tables']['proposal_items']['Insert'];
-type ProposalStatus = Database['public']['Enums']['proposal_status'];
 
 // Interface para o resultado do JOIN proposals + clients
 interface ProposalWithClient extends ProposalRow {
@@ -73,15 +71,6 @@ export interface PropostaInput {
 interface ClientRelation {
   nome: string;
   empresa: string;
-}
-
-interface DbProposalItem {
-  id: string;
-  nome: string;
-  quantidade: number;
-  preco_unitario: number;
-  subtotal: number;
-  ordem: number;
 }
 
 export const PropostaService = {

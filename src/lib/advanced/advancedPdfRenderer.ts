@@ -175,7 +175,6 @@ export function renderProposalHtml(doc: ProposalDocument): string {
   const font = FONT_MAP[doc.brand.fontPreference] || FONT_MAP.inter;
   const vs = doc.brand.visualStyle || 'corporate';
   const pc = doc.brand.primaryColor;
-  const sc = doc.brand.secondaryColor;
   const ac = doc.brand.accentColor;
   const preset = getStylePreset(vs, pc, ac);
 
@@ -290,7 +289,7 @@ export function renderProposalHtml(doc: ProposalDocument): string {
 // Cover renderers
 // ============================================================
 
-function renderDefaultCover(doc: ProposalDocument, vs: string, pc: string): string {
+function renderDefaultCover(doc: ProposalDocument, vs: string, _pc: string): string {
   const dateStr = new Date(doc.metadata.generatedAt).toLocaleDateString('pt-MZ', {
     day: '2-digit', month: 'long', year: 'numeric',
   });
@@ -361,9 +360,9 @@ function renderCoverSection(section: DocSection, doc: ProposalDocument, vs: stri
 
 function renderContentSection(
   section: DocSection,
-  doc: ProposalDocument,
-  primaryColor: string,
-  accentColor: string,
+  _doc: ProposalDocument,
+  _primaryColor: string,
+  _accentColor: string,
 ): string {
   const htmlContent = markdownToHtml(section.content);
 

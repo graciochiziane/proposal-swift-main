@@ -19,7 +19,7 @@ import MemberList from '@/components/org/MemberList';
 import RoleBadge from '@/components/org/RoleBadge';
 
 export default function Organizacao() {
-  const { organization, orgRole, hasOrgRoleMin, refreshOrg, user, memberships, setActiveOrganization } = useAuth();
+  const { organization, orgRole, hasOrgRoleMin, refreshOrg, memberships, setActiveOrganization } = useAuth();
   const [nome, setNome] = useState(organization?.nome || '');
   const [corPrimaria, setCorPrimaria] = useState(organization?.cor_primaria || '#0B5394');
   const [saving, setSaving] = useState(false);

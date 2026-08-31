@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 function ThemeToggle() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { setTheme, resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
 
   const toggle = () => setTheme(isDark ? 'light' : 'dark');
