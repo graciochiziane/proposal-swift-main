@@ -19,8 +19,6 @@ export function MetricsTab({ activeTab }: { activeTab: string }) {
     mostActive, loading, summary24h, refresh,
   } = useAdminMetrics(activeTab, true);
 
-  const planDistribution = { free: 0, pro: 0, business: 0 }; // placeholder — real comes from UsersTab
-
   if (loading && !metrics) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

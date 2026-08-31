@@ -10,6 +10,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import type { Database } from '@/integrations/supabase/types';
+
+type PlanTier = Database['public']['Enums']['plan_tier'];
 
 export interface PlanFeature {
   feature_key: string;
@@ -33,7 +36,7 @@ export function usePlanFeatures() {
   const [features, setFeatures] = useState<PlanFeature[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadFeatures = useCallback(async (plano: string) => {
+  const loadFeatures = useCallback(async (plano: PlanTier) => {
     setLoading(true);
     try {
       const { data, error } = await supabase

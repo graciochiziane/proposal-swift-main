@@ -4,9 +4,12 @@ import "./index.css";
 import { PostHogProvider } from 'posthog-js/react';
 import { posthogClient } from './lib/posthog';
 
-const AppWithAnalytics = posthogClient
+// const local: o narrowing persiste dentro das closures (bindings importados não)
+const client = posthogClient;
+
+const AppWithAnalytics = client
   ? () => (
-      <PostHogProvider client={posthogClient}>
+      <PostHogProvider client={client}>
         <App />
     </PostHogProvider>
   )

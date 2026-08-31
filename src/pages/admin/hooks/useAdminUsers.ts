@@ -78,13 +78,16 @@ export function useAdminUsers(isAdmin: boolean) {
     if (error) return toast.error('Erro ao alterar plano');
     // FIX 3.3: Audit plan change from Users tab
     try {
-      await supabase.from('admin_audit_log').insert({
-        admin_id: (await supabase.auth.getUser()).data.user?.id,
-        action: 'plan_change',
-        target_table: 'profiles',
-        target_id: u.id,
-        target_snapshot: { from: prev, to: plano, email: u.email },
-      });
+      const admin_id = (await supabase.auth.getUser()).data.user?.id;
+      if (admin_id) {
+        await supabase.from('admin_audit_log').insert({
+          admin_id,
+          action: 'plan_change',
+          target_table: 'profiles',
+          target_id: u.id,
+          target_snapshot: { from: prev, to: plano, email: u.email },
+        });
+      }
     } catch { /* audit failure is non-blocking */ }
     toast.success(`Plano de ${u.email} alterado para ${plano}`);
     loadData();
@@ -110,13 +113,16 @@ export function useAdminUsers(isAdmin: boolean) {
     }
     // FIX 3.3: Audit role change
     try {
-      await supabase.from('admin_audit_log').insert({
-        admin_id: (await supabase.auth.getUser()).data.user?.id,
-        action: newAction,
-        target_table: 'user_roles',
-        target_id: u.id,
-        target_snapshot: { email: u.email, role: 'admin' },
-      });
+      const admin_id = (await supabase.auth.getUser()).data.user?.id;
+      if (admin_id) {
+        await supabase.from('admin_audit_log').insert({
+          admin_id,
+          action: newAction,
+          target_table: 'user_roles',
+          target_id: u.id,
+          target_snapshot: { email: u.email, role: 'admin' },
+        });
+      }
     } catch { /* non-blocking */ }
     loadData();
   };

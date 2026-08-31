@@ -14,7 +14,7 @@ interface Summary24h {
 }
 
 export function useAdminMetrics(activeTab: string, isAdmin: boolean) {
-  const [metrics, setMetrics] = useState<ReturnType<typeof analyticsService.getPlatformMetrics> | null>(null);
+  const [metrics, setMetrics] = useState<Awaited<ReturnType<typeof analyticsService.getPlatformMetrics>> | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<Awaited<ReturnType<typeof analyticsService.getOnlineUsers>>>([]);
   const [dauData, setDauData] = useState<{ date: string; count: number }[]>([]);
   const [signupData, setSignupData] = useState<{ date: string; total: number }[]>([]);

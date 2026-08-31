@@ -4,8 +4,8 @@ import { queryClient } from '@/App';
 import type { Tables, Enums } from '@/integrations/supabase/types';
 
 // Re-exportar tipo de role para uso nos componentes
-export type OrgRole = Enums['org_role'];
-export type Organization = Tables<'organizations'>['Row'];
+export type OrgRole = Enums<'org_role'>;
+export type Organization = Tables<'organizations'>;
 
 // Membro com dados de profile (flat, sem join — FK aponta para auth.users)
 export interface OrgMemberWithProfile {
