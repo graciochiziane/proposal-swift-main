@@ -207,6 +207,59 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-28] — Type bugs reais: 25 erros TS + posthog config inválida
+
+**Tipo:** type safety / analytics fix (2 commits)
+**Branch:** `feature/multi-user-hierarchy`
+**Commits:** `d46b5d6` (types), `b11f2b6` (posthog)
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Commit 1 — `d46b5d6` fix(types): 24 erros em 6 ficheiros
+
+- `useAdminMetrics.ts:17` — `useState<ReturnType<...>>` → `Awaited<ReturnType<...>>` (função async devolve Promise; runtime já correcto via `await Promise.all`; resolve 17 erros em cascata no MetricsTab)
+- `MetricsTab.tsx:22` — removido `planDistribution` placeholder não lido (real vem de useAdminUsers)
+- `useAdminUsers.ts:82,114` — `admin_id` extraído para variável + guard `if (admin_id)` (Insert de `admin_audit_log` exige `string`; preserva semântica non-blocking)
+- `useOrganization.ts:7,8` — `Enums<'org_role'>` (generic requer type arg); `Tables<'organizations'>` (Tables<T> já é o Row)
+- `usePlanFeatures.ts:40` — param `plano` tipado como `Database['public']['Enums']['plan_tier']` (match com Args da RPC `get_plan_features`)
+- `main.tsx:9` — const local para preservar narrowing em closures (bindings importados não preservam narrowing — verificado por teste)
+
+#### Commit 2 — `b11f2b6` fix(analytics): posthog.ts
+
+Confirmado por leitura directa das types instaladas (posthog-js 1.396.4 + @posthog/types) e teste de compilação individual de cada prop:
+
+1. `mask_inputs: [...]` — **NÃO existe** em `PostHogConfig`. Era silenciosamente ignorado → email/tel/number **não estavam mascarados** nos session replays. Substituído por `session_recording.maskInputOptions` — **activa a máscara pretendida** (melhoria real de privacidade; password já mascarado por default do rrweb)
+2. `ip_anonymization_default: true` — **NÃO existe**; prop `ip` equivalente está deprecated com NO EFFECT. Anonimização de IP é setting server-side do PostHog
+3. `pageview_ignore_list: [...]` — **NÃO existe**; irrelevante porque `capture_pageview: false` (a app rastreia pageviews via `useActivityTracker` próprio)
+
+#### Breaking Changes
+
+Nenhuma. Commit 1 é type-level (runtime inalterado). Commit 2: remover props inválidas = zero mudança runtime (eram ignoradas); `maskInputOptions` = activa comportamento pretendido.
+
+#### Análise de Impacto
+
+- **Evolução erros TS:** 88 → 63 (−25)
+- Cascata positiva: `Propostas.tsx` 8 → 7 (fix de `useOrganization`)
+- eslint: 11 problemas pre-existing nos ficheiros tocados (confirmado via git stash roundtrip — 0 novos); `posthog.ts` limpo
+- ⚠️ **PENDÊNCIA UTILIZADOR (PostHog):** activar "Discard IP data" no dashboard do projecto PostHog (server-side) — o client nunca controlou isto; a prop que constava no código nunca funcionou
+
+#### Rollback
+
+```bash
+git revert d46b5d6 b11f2b6
+```
+
+#### Testes
+
+- `tsc --noEmit`: 88 → 63 (0 novos)
+- `eslint`: 0 novos (11 pre-existing)
+- `vitest`: 5/5 pass
+
+#### Notas de Segurança
+
+- Nenhum token/credencial exposto; `import.meta.env` usado como no código original
+
+---
+
 ### [2026-08-28] — Lote de 3 fixes: P3-config + test types + lint cleanup
 
 **Tipo:** config fix / test fix / lint cleanup (3 commits)
