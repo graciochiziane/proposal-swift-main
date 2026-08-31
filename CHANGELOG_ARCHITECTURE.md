@@ -207,6 +207,59 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-08-31] — 63 erros TS restantes eliminados: tsc chega a 0
+
+**Tipo:** type safety cleanup + real bug fixes (1 commit)
+**Branch:** `feature/multi-user-hierarchy`
+**Commits:** `c90a566`
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+Eliminação dos últimos 63 erros TS do `tsc -p tsconfig.app.json` (baseline da ronda), em 26 ficheiros. Evolução da sessão: 315 → 127 → 88 → 63 → **0**.
+
+**Lote A — 26 erros de unused** (imports/vars/props/funcções mortas): remoção verificada individualmente por grep antes de cada remoção (regra: nunca remover sem provar zero usos). Inclui remoção de `handleDownloadHtml` (funcção morta) + `getProposalHtmlBlob` (import usado só por ela) e das props `stageColor`/`dotColor` do `OpportunityCard` (destruturação + tipo + 2 call sites — o corpo nunca as usava).
+
+**Lote B — 37 type bugs reais**, com análise de causa raiz:
+
+1. **`DonoProposta` + `email?`/`telefone?`** — os placeholders `{{empresa.email}}`/`{{empresa.telefone}}` (documentados em `AVAILABLE_PLACEHOLDERS`) acediam a campos inexistentes no tipo. Campos opcionais, backwards-compatible; `SAMPLE_EMPRESA` do TemplateManager completado (sem cast).
+2. **`pdfExport.ts`** — `ProposalDocument` importado da fonte canónica `documentModel` (não re-exportado por `advancedPdfRenderer`).
+3. **`renderTemplatePreview`** — `DOMPurify.sanitize.ALLOWED_TAGS/ALLOWED_ATTR` não existem na função `sanitize` (verificado nos types instalados, dompurify 3.4.14) → em runtime passavam `undefined`, i.e. o sanitize já corria com a allow-list default. Simplificado para `DOMPurify.sanitize(filled)` com comentário — comportamento runtime idêntico, código honesto.
+4. **`organizationService`** — `Tables<'organizations'>['Row']` não existe no types.ts regenerado (M4): `Tables<T>` já É o Row. `OrganizationUpdate`/`Enums` removidos (unused).
+5. **`profileService`** — casts duplos documentados para `dados_bancarios`/`mobile_money` (fronteira BD Json → tipo de domínio; padrão canónico para colunas jsonb).
+6. **`PlanFeaturesDialog`** — `p_limit_value: limitValue ?? undefined` (×2) e omissão do arg no handleAddNew: a RPC `upsert_plan_feature` tem `p_limit_value INTEGER DEFAULT NULL` (migration 20260813150000); o gen types emite `p_limit_value?: number` sem null — omitir = default NULL = "ilimitado" (semântica preservada).
+7. **`PlanLimitsDialog`** — `PlanRow.plano: PlanTier` (era `string`; `.eq('plano', ...)` exige o enum), guard `if (adminId)` (semântica non-blocking audit, igual ao precedente useAdminUsers) e `target_id: p.plano` (coluna NOT NULL; plan_limits é identificada pela PK `plano`).
+8. **`adminService.logAction`** — `targetTable`/`targetId` agora obrigatórios (coluna `target_id` NOT NULL; os 4 callers já os passavam) e `snapshot?: Json` (o Insert exige Json, não `Record<string, unknown>`).
+9. **`GerarPropostaIA`** — `Object.entries(fields) as [keyof PropostaAiFields, string | undefined][]` (×2 loops idênticos).
+10. **`propostaService`** — `PropostaResumo.status: StatusProposta` (era `string` — os valores do enum DB são exactamente os 4 do domínio) e `observacoes?: string` adicionado ao select+mapper: **o filtro de busca por observações em Propostas.tsx nunca funcionava** (campo ausente do select). `ProposalWithClient` removido (anotação manual causava TS2345; inferência do select + relationships resolve). Insert de proposta: cast duplo documentado — `numero` NÃO é passado porque o trigger `set_proposal_numero()` o gera quando NULL (migration 20260708010000); o gen types exige `numero` (coluna NOT NULL sem default) porque não conhece triggers. `clienteSnapshot` com cast para o tipo alvo (`Proposta['clienteSnapshot']`).
+11. **`advancedProposalService`/`crmService`** — `updates`/`updateData` tipados `TablesUpdate<'...'>`: o `.update()` do supabase rejeita `Record<string, unknown>` (RejectExcessProperties). `updateClienteCRM` reescrito com assignments explícitos por coluna (enum domain = enum DB confirmado: crm_estado/crm_origem idênticos). `description: string | null` da BD mapeado para `''` na fronteira (tipo de domínio exige `string`; consumidores inalterados).
+12. **`invitationService`** — guard `if (data.token)` (Row tipa `token: string | null`; warn explícito no caso anómalo) e `nome: ''` no `getByToken` (a RPC `get_invitation_by_token` não devolve `nome` — ver invite_token.sql; comentário adicionado).
+13. **`PreencherProposta`/`RevisaoProposta`** — `const proposalId = id` após o guard: o narrowing de `id` não persiste dentro de function declarations hoisted (precedente main.tsx).
+14. **`NovaPropostaAvancada`** — `done={false}` no último `StepDot` (prop requerida).
+
+#### Breaking Changes
+
+- **Nenhum** — todos os fixes preservam comportamento runtime (verificados individualmente; os 2 comportamentos que já eram "default" em runtime — sanitize e p_limit_value — mantêm o mesmo output).
+- `logAction` (adminService): assinatura tornou-se mais estrita (`targetTable`/`targetId` obrigatórios) — interno ao módulo, todos os callers já cumpriam.
+
+#### Validação
+
+- `tsc --noEmit -p tsconfig.app.json`: **0 erros** (de 63 nesta ronda; 315 no início da sessão)
+- `eslint` (26 ficheiros alterados): **0 novos** — 25 problemas pre-existing provados via git stash roundtrip (20 `any`, 1 prefer-const, 1 interface vazia, 1 escape, 2 react-hooks warnings; linhas deslocadas apenas por imports removidos)
+- `vitest`: 5/5 pass
+
+#### Rollback
+
+- Tag `checkpoint/2026-08-31-pre-typebugs` (HEAD antes da ronda = `1493098`)
+- `git revert c90a566` ou reset para a tag
+
+#### Notas de Segurança
+
+- Nenhuma alteração de RLS/auth/queries — apenas tipos e formas de objectos client-side
+- Sem `any` novo; casts duplos apenas em fronteiras BD-Json com documentação
+
+---
+
 ### [2026-08-28] — Type bugs reais: 25 erros TS + posthog config inválida
 
 **Tipo:** type safety / analytics fix (2 commits)
