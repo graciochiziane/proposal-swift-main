@@ -10,22 +10,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Bar, BarChart, XAxis, YAxis } from 'recharts';
-import { ArrowLeft, Save, Ban, CheckCircle, AlertTriangle, Brain, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Ban, CheckCircle, Brain, Trash2 } from 'lucide-react';
 
 const iaChartConfig: ChartConfig = { count: { label: 'Gerações IA', color: 'hsl(var(--chart-2))' } };
-
-const planBadge: Record<string, string> = {
-  free: 'bg-muted text-muted-foreground border-border',
-  pro: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-  business: 'bg-primary/15 text-primary border-primary/30',
-};
 
 function healthColor(score: number): string {
   if (score >= 80) return 'text-green-600';

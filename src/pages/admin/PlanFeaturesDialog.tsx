@@ -86,7 +86,7 @@ export function PlanFeaturesDialog({ open, onOpenChange }: { open: boolean; onOp
         p_plano: plan,
         p_feature_key: key,
         p_enabled: enabled,
-        p_limit_value: limitValue,
+        p_limit_value: limitValue ?? undefined,
       });
       if (error) throw error;
       toast.success(`${key} ${enabled ? 'activado' : 'desactivado'} para ${plan}`);
@@ -100,9 +100,6 @@ export function PlanFeaturesDialog({ open, onOpenChange }: { open: boolean; onOp
   const handleLimitChange = async (key: string, plan: PlanTier, limitStr: string) => {
     const limitValue = limitStr === '' ? null : Number(limitStr);
     if (limitValue !== null && Number.isNaN(limitValue)) return;
-
-    const existing = getFeatureForPlan(key, plan);
-    const enabled = existing?.enabled ?? false;
 
     // Optimistic update
     setFeatures(prev => {
@@ -128,7 +125,7 @@ export function PlanFeaturesDialog({ open, onOpenChange }: { open: boolean; onOp
         p_plano: plan,
         p_feature_key: key,
         p_enabled: existing.enabled,
-        p_limit_value: limitValue,
+        p_limit_value: limitValue ?? undefined,
       });
       if (error) throw error;
       toast.success(`Limite de ${key} actualizado para ${plan}`);
@@ -158,7 +155,8 @@ export function PlanFeaturesDialog({ open, onOpenChange }: { open: boolean; onOp
           p_plano: plan,
           p_feature_key: key,
           p_enabled: false,
-          p_limit_value: null,
+          // p_limit_value omitido -> DEFAULT NULL no Postgres = ilimitado
+          // (o tipo gerado do RPC não aceita null explícito)
         });
         if (error) throw error;
       }

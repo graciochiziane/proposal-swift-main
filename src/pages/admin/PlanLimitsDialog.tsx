@@ -11,11 +11,13 @@ import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface PlanRow {
-  plano: string;
+  plano: PlanTier;
   propostas_mes: number;
   geracoes_ia_mes: number;
   clientes_max: number | null;
 }
+
+type PlanTier = 'free' | 'pro' | 'business';
 
 export function PlanLimitsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [plans, setPlans] = useState<PlanRow[]>([]);
@@ -39,15 +41,19 @@ export function PlanLimitsDialog({ open, onOpenChange }: { open: boolean; onOpen
         clientes_max: p.clientes_max,
       }).eq('plano', p.plano);
 
-      // FIX 3.4: Audit each plan limit change
-      try {
-        await supabase.from('admin_audit_log').insert({
-          admin_id: adminId,
-          action: 'plan_limits_update',
-          target_table: 'plan_limits',
-          target_snapshot: { plano: p.plano, before, after: { propostas_mes: p.propostas_mes, geracoes_ia_mes: p.geracoes_ia_mes, clientes_max: p.clientes_max } },
-        });
-      } catch { /* non-blocking */ }
+      // FIX 3.4: Audit each plan limit change (não-bloqueante)
+      if (adminId) {
+        try {
+          await supabase.from('admin_audit_log').insert({
+            admin_id: adminId,
+            action: 'plan_limits_update',
+            target_table: 'plan_limits',
+            // plan_limits é identificada pela PK plano (target_id NOT NULL)
+            target_id: p.plano,
+            target_snapshot: { plano: p.plano, before, after: { propostas_mes: p.propostas_mes, geracoes_ia_mes: p.geracoes_ia_mes, clientes_max: p.clientes_max } },
+          });
+        } catch { /* non-blocking */ }
+      }
     }
 
     toast.success('Planos actualizados');

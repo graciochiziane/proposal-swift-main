@@ -258,7 +258,7 @@ export const analyticsService = {
 
     const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
 
-    return sorted.map(([userId, visits]) => {
+    return sorted.map(([userId]) => {
       const p = profileMap.get(userId);
       return {
         id: userId,

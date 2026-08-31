@@ -45,8 +45,10 @@ export const ProfileService = {
       endereco: data.endereco || '',
       logotipo: logotipoUrl,
       corPrimaria: data.cor_primaria || '#0B5394',
-      dadosBancarios: data.dados_bancarios as DonoProposta['dadosBancarios'],
-      mobileMoney: data.mobile_money as DonoProposta['mobileMoney'],
+      // Colunas jsonb — o runtime devolve Json; narrowing para o tipo de domínio.
+      // Cast duplo documentado: fronteira BD Json -> tipo de domínio.
+      dadosBancarios: data.dados_bancarios as unknown as DonoProposta['dadosBancarios'],
+      mobileMoney: data.mobile_money as unknown as DonoProposta['mobileMoney'],
     };
   },
 

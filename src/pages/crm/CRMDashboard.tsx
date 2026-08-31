@@ -20,8 +20,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatMZN } from '@/services/propostaService';
 
-type Tab = 'overview' | 'pipeline' | 'followups' | 'activities';
-
 export default function CRMDashboard() {
   const navigate = useNavigate();
   const { hasFeature } = usePlanFeatures();

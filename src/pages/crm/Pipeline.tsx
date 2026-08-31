@@ -15,7 +15,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Loader2, AlertCircle, TrendingUp, Search,
-  FileText, Clock, Calendar, ChevronRight,
+  FileText, Clock, Calendar,
   Plus, Circle,
 } from 'lucide-react';
 import { CrmService, type PipelineOpportunity, type CrmEstado } from '@/services/crmService';
@@ -192,8 +192,6 @@ export default function Pipeline() {
                   <OpportunityCard
                     key={opp.client_id}
                     opp={opp}
-                    stageColor={stage.color}
-                    dotColor={stage.dotColor}
                     onClick={() => navigate(`/crm/contactos/${opp.client_id}`)}
                   />
                 ))}
@@ -228,8 +226,6 @@ export default function Pipeline() {
                   <OpportunityCard
                     key={opp.client_id}
                     opp={opp}
-                    stageColor={stage.color}
-                    dotColor={stage.dotColor}
                     onClick={() => navigate(`/crm/contactos/${opp.client_id}`)}
                   />
                 ))}
@@ -248,13 +244,9 @@ export default function Pipeline() {
 
 function OpportunityCard({
   opp,
-  stageColor,
-  dotColor,
   onClick,
 }: {
   opp: PipelineOpportunity;
-  stageColor: string;
-  dotColor: string;
   onClick: () => void;
 }) {
   const followUp = timeUntil(opp.proximo_contacto);

@@ -13,7 +13,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatMZN } from '@/services/propostaService';
-import { toast } from 'sonner';
 
 const ESTADO_CONFIG: Record<CrmEstado, { label: string; cor: string; bg: string; dot: string }> = {
   novo:              { label: 'Novo',              cor: 'text-blue-600',    bg: 'bg-blue-100',    dot: 'bg-blue-500' },

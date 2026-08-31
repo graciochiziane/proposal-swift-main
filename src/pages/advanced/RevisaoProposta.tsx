@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Sparkles, Eye, CheckCircle2,
-  Loader2, Pencil, RotateCcw, Download, FileText,
+  Loader2, Pencil, RotateCcw, FileText,
 } from 'lucide-react';
 import type {
   AdvancedProposal,
@@ -24,9 +24,7 @@ import { generateSectionContent, generateAllSections } from '@/services/proposta
 import {
   buildProposalDocument,
   openPdfPreview,
-  getProposalHtmlBlob,
   exportProposalPdf,
-  type ProposalDocument,
 } from '@/lib/advanced';
 import { useAuth } from '@/hooks/useAuth';
 import { ProfileService } from '@/services/profileService';
@@ -61,11 +59,14 @@ export default function RevisaoProposta() {
   // Load all data
   useEffect(() => {
     if (!id) return;
+    // Captura const local: o narrowing de `id` não persiste dentro de
+    // function declarations hoisted (ver tsc TS2345 anterior)
+    const proposalId = id;
     async function load() {
       try {
         const [prop, ans] = await Promise.all([
-          getAdvancedProposal(id),
-          getSectionAnswers(id),
+          getAdvancedProposal(proposalId),
+          getSectionAnswers(proposalId),
         ]);
         if (!prop) { toast.error('Proposta nao encontrada'); navigate('/propostas'); return; }
         setProposal(prop);
@@ -302,28 +303,6 @@ export default function RevisaoProposta() {
     } finally {
       setExportingPdf(false);
     }
-  };
-
-  // Download as HTML file (fallback)
-  const handleDownloadHtml = () => {
-    if (!proposal || !blueprint) return;
-    const doc = buildProposalDocument({
-      proposalId: proposal.id,
-      proposalTitle: proposal.title,
-      blueprint,
-      answers,
-      brandProfile,
-      companyInfo: getCompanyInfo(),
-      clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
-    });
-    const blob = getProposalHtmlBlob(doc);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${proposal.title.replace(/[^a-zA-Z0-9]/g, '_')}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Ficheiro HTML descarregado. Abra no browser e imprima como PDF.');
   };
 
   // Mark as reviewed

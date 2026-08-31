@@ -329,8 +329,10 @@ export function renderTemplatePreview(
   empresa: DonoProposta | undefined,
 ): string {
   const filled = renderTemplate(templateHtml, proposta, cliente, empresa);
-  return DOMPurify.sanitize(filled, {
-    ALLOWED_TAGS: DOMPurify.sanitize.ALLOWED_TAGS,
-    ALLOWED_ATTR: DOMPurify.sanitize.ALLOWED_ATTR,
-  });
+  // Sanitize com a allow-list default do DOMPurify.
+  // Nota: a versão anterior passava `DOMPurify.sanitize.ALLOWED_TAGS/ALLOWED_ATTR`,
+  // que são undefined em runtime (essas constantes não existem na função sanitize)
+  // — ou seja, o comportamento efectivo já era o default. Simplificado para
+  // reflectir o comportamento real.
+  return DOMPurify.sanitize(filled);
 }

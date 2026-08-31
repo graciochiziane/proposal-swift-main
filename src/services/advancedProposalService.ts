@@ -8,6 +8,7 @@
 // ============================================================
 
 import { supabase } from '@/integrations/supabase/client';
+import type { TablesUpdate } from '@/integrations/supabase/types';
 import type {
   BusinessCategory,
   ProposalBlueprint,
@@ -17,7 +18,6 @@ import type {
   AdvancedProposal,
   ProposalSectionAnswer,
   BlueprintWithSections,
-  AdvancedProposalWithAnswers,
 } from '@/types/advancedProposal';
 
 // --- Business Categories ---
@@ -82,7 +82,9 @@ export async function getBlueprintWithSections(blueprintId: string): Promise<Blu
     .order('order', { ascending: true });
   if (secError) throw secError;
 
-  const sectionIds = sections.map((s: ProposalSection) => s.id);
+  // Inferência do Row (o select devolve o tipo exacto); a anotação manual
+  // ProposalSection causava TS2345 (content_rules: Json vs ContentRules)
+  const sectionIds = sections.map(s => s.id);
   const { data: questions, error: qError } = await supabase
     .from('section_questions')
     .select('*')
@@ -206,7 +208,9 @@ export async function updateAdvancedProposalStatus(
   status: AdvancedProposal['status'],
   currentSectionIndex?: number,
 ): Promise<void> {
-  const updates: Record<string, unknown> = { status };
+  // Objecto tipado (não Record<string, unknown>) — .update() rejeita
+  // index signatures (RejectExcessProperties)
+  const updates: TablesUpdate<'advanced_proposals'> = { status };
   if (currentSectionIndex !== undefined) {
     updates.current_section_index = currentSectionIndex;
   }

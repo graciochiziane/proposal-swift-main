@@ -1,9 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { Tables, Enums } from '@/integrations/supabase/types';
+import type { Tables } from '@/integrations/supabase/types';
 
 // ── Types ──
-type Organization = Tables<'organizations'>['Row'];
-type OrganizationUpdate = Tables<'organizations'>['Update'];
+// Nota: no types.ts regenerado (M4), Tables<'X'> devolve directamente o tipo Row.
+type Organization = Tables<'organizations'>;
 
 export interface OrgWithStats extends Organization {
   member_count: number;

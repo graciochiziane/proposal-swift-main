@@ -13,6 +13,7 @@
 //   requireAdmin() is kept only for WRITE methods (logAction).
 // ============================================================
 import { supabase } from '@/integrations/supabase/client';
+import type { Json } from '@/integrations/supabase/types';
 import type { Tenant, TenantDetail, TenantMember, AuditLogEntry, UpdateTenantData } from '@/types/admin';
 
 // ---- Helpers ----
@@ -27,7 +28,9 @@ async function requireAdminForWrite(): Promise<{ userId: string }> {
   return { userId: session.user.id };
 }
 
-const logAction = async (action: string, targetTable?: string, targetId?: string, targetOwnerId?: string, snapshot?: Record<string, unknown>) => {
+// target_table e target_id são obrigatórios: a coluna admin_audit_log.target_id
+// é NOT NULL (ver types.ts) e todos os callers já os fornecem.
+const logAction = async (action: string, targetTable: string, targetId: string, targetOwnerId?: string, snapshot?: Json) => {
   const { userId } = await requireAdminForWrite();
   await supabase.from('admin_audit_log').insert({
     admin_id: userId,
@@ -94,7 +97,7 @@ export const updateTenant = async (id: string, data: UpdateTenantData, previousP
   if (data.plano && previousPlano && data.plano !== previousPlano) {
     await logAction('plan_change', 'organizations', id, undefined, { from: previousPlano, to: data.plano });
   } else {
-    await logAction('tenant_update', 'organizations', id, undefined, data as unknown as Record<string, unknown>);
+    await logAction('tenant_update', 'organizations', id, undefined, data as unknown as Json);
   }
 };
 

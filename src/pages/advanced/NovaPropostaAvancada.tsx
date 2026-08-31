@@ -156,7 +156,7 @@ export default function NovaPropostaAvancada() {
           <div className="w-6 h-px bg-border" />
           <StepDot active={step === 'blueprint'} done={['client'].includes(step)} label="Modelo" />
           <div className="w-6 h-px bg-border" />
-          <StepDot active={step === 'client'} label="Detalhes" />
+          <StepDot active={step === 'client'} done={false} label="Detalhes" />
         </div>
       </div>
 

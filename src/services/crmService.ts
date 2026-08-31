@@ -6,6 +6,7 @@
 // ============================================================
 
 import { supabase } from '@/integrations/supabase/client';
+import type { TablesUpdate } from '@/integrations/supabase/types';
 import { OrganizationService } from './organizationService';
 import type { Cliente } from '@/types';
 
@@ -412,23 +413,28 @@ export const CrmService = {
     return {
       cliente,
       propostas: propostasData ?? [],
-      activities: activitiesData ?? [],
-      followUps: followUpsData ?? [],
+      // description é nullable na BD mas string no tipo de domínio —
+      // mapeamos na fronteira (null -> '') sem alterar consumidores
+      activities: (activitiesData ?? []).map(a => ({ ...a, description: a.description ?? '' })),
+      followUps: (followUpsData ?? []).map(f => ({ ...f, description: f.description ?? '' })),
     };
   },
 
   async updateClienteCRM(clientId: string, fields: Partial<ClienteWithCRM>): Promise<void> {
-    const updateData: Record<string, unknown> = {};
-    const allowed = [
-      'cargo', 'whatsapp', 'origem', 'tipo', 'estado_comercial',
-      'valor_potencial', 'ultimo_contacto', 'proximo_contacto',
-      'responsavel_id', 'notas',
-    ];
-    for (const key of allowed) {
-      if (fields[key as keyof ClienteWithCRM] !== undefined) {
-        updateData[key] = fields[key as keyof ClienteWithCRM];
-      }
-    }
+    // Objecto tipado (não Record<string, unknown>): o .update() do supabase
+    // rejeita index signatures (RejectExcessProperties). Assignments
+    // explícitos garantem que só colunas reais são actualizadas.
+    const updateData: TablesUpdate<'clients'> = {};
+    if (fields.cargo !== undefined) updateData.cargo = fields.cargo;
+    if (fields.whatsapp !== undefined) updateData.whatsapp = fields.whatsapp;
+    if (fields.origem !== undefined) updateData.origem = fields.origem;
+    if (fields.tipo !== undefined) updateData.tipo = fields.tipo;
+    if (fields.estado_comercial !== undefined) updateData.estado_comercial = fields.estado_comercial;
+    if (fields.valor_potencial !== undefined) updateData.valor_potencial = fields.valor_potencial;
+    if (fields.ultimo_contacto !== undefined) updateData.ultimo_contacto = fields.ultimo_contacto;
+    if (fields.proximo_contacto !== undefined) updateData.proximo_contacto = fields.proximo_contacto;
+    if (fields.responsavel_id !== undefined) updateData.responsavel_id = fields.responsavel_id;
+    if (fields.notas !== undefined) updateData.notas = fields.notas;
     if (Object.keys(updateData).length === 0) return;
 
     const { error } = await supabase

@@ -4,13 +4,11 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, Clock, Plus } from 'lucide-react';
+import { Loader2, AlertCircle, Clock } from 'lucide-react';
 import { CrmService, type CrmActivity } from '@/services/crmService';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
-
 function formatDateTime(iso: string): string {
   try {
     return new Date(iso).toLocaleString('pt-MZ', {

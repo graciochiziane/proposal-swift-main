@@ -6,7 +6,8 @@
 
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { renderProposalHtml, type ProposalDocument } from './advancedPdfRenderer';
+import { renderProposalHtml } from './advancedPdfRenderer';
+import type { ProposalDocument } from './documentModel';
 
 // A4 dimensions in mm
 const A4_WIDTH_MM = 210;

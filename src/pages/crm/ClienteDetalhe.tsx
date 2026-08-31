@@ -7,7 +7,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Phone, Mail, Building2, MessageCircle, Edit3,
   Loader2, AlertCircle, FileText, Clock, Calendar,
-  Plus, Check, Trash2, ChevronRight,
+  Plus, Check, ChevronRight,
 } from 'lucide-react';
 import { CrmService, type ClienteWithCRM, type CrmActivity, type CrmFollowUp, type CrmEstado, type CrmActivityType } from '@/services/crmService';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

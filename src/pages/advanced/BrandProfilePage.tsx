@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Palette, Save, RotateCcw, Eye } from 'lucide-react';
-import type { CompanyBrandProfile, VisualStyle } from '@/types/advancedProposal';
+import type { VisualStyle } from '@/types/advancedProposal';
 import { getBrandProfile, saveBrandProfile } from '@/services/advancedProposalService';
 import { useAuth } from '@/hooks/useAuth';
 

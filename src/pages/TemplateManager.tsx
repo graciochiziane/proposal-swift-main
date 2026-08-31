@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  Plus, Save, Trash2, Eye, Loader2, AlertCircle,
+  Plus, Save, Trash2, Eye, Loader2,
   FileCode, Code, Upload,
 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
@@ -41,10 +41,17 @@ const SAMPLE_CLIENTE: Cliente = {
 };
 
 const SAMPLE_EMPRESA: DonoProposta = {
-  nome: 'PropostaJá', empresa: 'PropostaJá Lda',
-  nuit: '4005006007', endereco: 'Maputo, Moçambique',
+  nome: 'PropostaJá', cargo: 'Director Comercial', empresa: 'PropostaJá Lda',
+  contacto: '+258 84 000 0000', nuit: '4005006007', endereco: 'Maputo, Moçambique',
+  logotipo: '', corPrimaria: '#0B5394',
   email: 'contacto@propostaja.com', telefone: '+258 84 000 0000',
-} as DonoProposta;
+  dadosBancarios: { ativo: false, banco: '', numeroConta: '', nib: '' },
+  mobileMoney: {
+    mpesa: { ativo: false, numero: '' },
+    emola: { ativo: false, numero: '' },
+    mkesh: { ativo: false, numero: '' },
+  },
+};
 
 const DEFAULT_TEMPLATE = `<style>
 body { font-family: Arial, sans-serif; margin: 0; padding: 40px; color: #333; }

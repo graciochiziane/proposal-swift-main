@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { calcularSubtotal, calcularTotal } from '@/lib/calculos';
-import type { ItemProposta, DescontoTipo, Proposta } from '@/types';
+import type { ItemProposta, DescontoTipo, Proposta, StatusProposta } from '@/types';
 import type { Database } from '@/integrations/supabase/types';
 import { OrganizationService } from './organizationService';
 
@@ -11,9 +11,8 @@ type ProposalItemRow = Database['public']['Tables']['proposal_items']['Row'];
 type ProposalItemInsert = Database['public']['Tables']['proposal_items']['Insert'];
 
 // Interface para o resultado do JOIN proposals + clients
-interface ProposalWithClient extends ProposalRow {
-  clients?: { id: string; nome: string; email?: string | null; telefone?: string | null } | null;
-}
+// (removida: o select com colunas explícitas + relationships do types.ts
+// regenerado já infere o tipo correcto — anotação manual causava TS2345)
 
 // -------------------------------------------
 // Utility: formatar valor como MZN
@@ -45,7 +44,9 @@ export interface PropostaResumo {
   clienteEmpresa: string;
   data: string;
   total: number;
-  status: string;
+  status: StatusProposta;
+  // Observações da proposta — usada pelo filtro de busca em Propostas.tsx
+  observacoes?: string;
   created_at: string;
 }
 
@@ -91,6 +92,7 @@ export const PropostaService = {
         data,
         total,
         status,
+        observacoes,
         created_at,
         created_by,
         clients(nome, empresa)
@@ -108,7 +110,7 @@ export const PropostaService = {
       throw error;
     }
 
-    return (data || []).map((p: ProposalWithClient) => {
+    return (data || []).map((p) => {
       const client = p.clients as ClientRelation | null;
       return {
         id: p.id,
@@ -119,6 +121,7 @@ export const PropostaService = {
         data: p.data,
         total: Number(p.total),
         status: p.status,
+        observacoes: p.observacoes ?? '',
         created_at: p.created_at,
       };
     });
@@ -223,7 +226,13 @@ export const PropostaService = {
         iva_percentual: input.ivaPercentual,
         total: totais.total,
         cliente_snapshot: clienteSnapshot,
-      } as ProposalInsert])
+      } as unknown as ProposalInsert])
+      // Cast duplo documentado: `numero` não é passado porque é gerado pelo
+      // trigger set_proposal_numero() quando NULL (ver migration
+      // 20260708010000_multi_tenant_trigger_hardening.sql). O tipo Insert
+      // exige numero (coluna NOT NULL sem default) — o gen types não conhece
+      // triggers. NÃO passar numero: '' (string vazia é NOT NULL e o trigger
+      // preservaria o valor vazio).
       .select()
       .single();
 
@@ -271,7 +280,7 @@ export const PropostaService = {
       ivaPercentual: Number(proposta.iva_percentual),
       total: Number(proposta.total),
       status: proposta.status as Proposta['status'],
-      clienteSnapshot: proposta.cliente_snapshot as ProposalInsert['cliente_snapshot'],
+      clienteSnapshot: proposta.cliente_snapshot as Proposta['clienteSnapshot'],
       itens: itens.map(item => ({
         id: '',
         nome: item.nome,

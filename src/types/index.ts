@@ -69,6 +69,10 @@ export interface DonoProposta {
   corPrimaria: string; // hex color
   dadosBancarios: DadosBancarios;
   mobileMoney: MobileMoney;
+  // Opcionais — usados pelos placeholders {{empresa.email}}/{{empresa.telefone}}
+  // dos templates PDF (ver pdfTemplateService.renderTemplate)
+  email?: string;
+  telefone?: string;
 }
 
 // ===== TIPOS DE FATURA =====

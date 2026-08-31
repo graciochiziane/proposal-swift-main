@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Loader2, Sparkles, Save,
-  CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Users,
+  CheckCircle2, ChevronLeft, ChevronRight, Users,
 } from 'lucide-react';
 import type {
   AdvancedProposal,
@@ -40,12 +40,15 @@ export default function PreencherProposta() {
   // Load proposal + blueprint + existing answers + clients
   useEffect(() => {
     if (!id) return;
+    // Captura const local: o narrowing de `id` não persiste dentro de
+    // function declarations hoisted (ver tsc TS2345 anterior)
+    const proposalId = id;
 
     async function load() {
       try {
         const [propData, existingAnswers] = await Promise.all([
-          getAdvancedProposal(id),
-          getSectionAnswers(id),
+          getAdvancedProposal(proposalId),
+          getSectionAnswers(proposalId),
         ]);
 
         if (!propData) {

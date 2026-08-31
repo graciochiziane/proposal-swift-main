@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Filter, Eye, Copy, Trash2, Loader2,
-  FileText, BarChart3, Calendar, ChevronDown,
+  FileText,
   MoreHorizontal, FileCheck, CheckCircle, XCircle, Clock
 } from 'lucide-react';
 import { PropostaService, formatMZN } from '@/services/propostaService';
@@ -36,7 +36,6 @@ export default function Propostas() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todas');
-  const [menuAberto, setMenuAberto] = useState<string | null>(null);
   const [acaoDropdown, setAcaoDropdown] = useState<string | null>(null);
 
   useEffect(() => {

@@ -167,9 +167,15 @@ export const InvitationService = {
     if (error) throw error;
     if (!data) throw new Error('Falha ao criar convite');
 
-    this._sendInviteEmail(data.id, data.token, normalizedEmail, role, orgId).catch(
-      (emailErr) => console.warn('Convite criado mas email nao enviado:', emailErr)
-    );
+    if (data.token) {
+      this._sendInviteEmail(data.id, data.token, normalizedEmail, role, orgId).catch(
+        (emailErr) => console.warn('Convite criado mas email nao enviado:', emailErr)
+      );
+    } else {
+      // Row tipa token como string | null; em prática o DB gera sempre,
+      // mas não escondemos o caso anómalo
+      console.warn('Convite criado sem token — email de convite não enviado');
+    }
 
     return { ...data, inviterNome: null, nome: nome || '' } as unknown as Invitation;
   },
@@ -259,6 +265,8 @@ export const InvitationService = {
       id: row.id,
       organization_id: row.organization_id,
       email: row.email,
+      // RPC get_invitation_by_token não devolve nome (ver invite_token.sql)
+      nome: '',
       role: row.role,
       token: row.token,
       invited_by: row.invited_by,
