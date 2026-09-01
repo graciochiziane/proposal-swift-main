@@ -174,16 +174,19 @@ proposal-swift-main/
 | `generate-proposal` | ✅ JWT | `*` ❌ | ❌ | ✅ 10-step |
 | `generate-section` | ✅ JWT | `*` ❌ | ❌ | ✅ |
 | `send-invite-email` | ❌ **NONE** | `*` ❌ | ❌ | ✅ |
+| `send-proposal-email` | ✅ JWT | ✅ allowlist | ❌ | ✅ |
 | `admin-create-tenant` | ✅ JWT + admin | (sem CORS) | ❌ | ❌ |
 
-### 3.6 Motor de Geração de Propostas (HTML-only)
+### 3.6 Motor de Geração de Propostas (PDF vectorial — 2 templates modernos)
 
-- **Único formato: HTML autónomo** (decisão 2026-09-01) — jsPDF/html2canvas/jspdf-autotable removidos do código e das dependências
-- **Cotações (Doc B):** templates HTML da tabela `pdf_templates` (placeholders `{{}}`) + `DEFAULT_HTML_TEMPLATE` incorporado como fallback → `renderTemplate` → DOMPurify → `wrapHtmlDocument` (A4 print-ready + botão Imprimir)
-- **Proposta narrativa IA (Doc A):** `lib/html/narrativaHtml.ts` — secções IA (markdown seguro P0-C5) → HTML com marca (cor primária/logotipo)
-- **Propostas avançadas:** `lib/advanced/advancedPdfRenderer.ts` (4 estilos visuais) → `openHtmlPreview`/`downloadProposalHtml`
-- **PDF:** via Imprimir > Guardar como PDF do browser (caminho nativo, sem libs; texto seleccionável/acedível por natureza)
-- **Nome `pdf_templates`/`PdfTemplateService` mantido** por compatibilidade com a DB — o output é HTML
+- **Único formato: PDF vectorial** (decisão 2026-09-01, 2.ª revisão do dia — reverte a decisão HTML-only da manhã) — gerado no browser com **jsPDF**, texto real seleccionável; ficheiros prontos a enviar ao cliente (download + email com anexo)
+- **2 templates modernos incorporados** (definidos em código, sem dependência da tabela `pdf_templates`):
+  - **Executivo Moderno** — capa com banda em gradiente derivado da cor da marca, geometria decorativa em opacidade (GState), cartões Cliente/Emitente, cartão de total destacado, secções numeradas em chips, tabela zebra, pagamentos em cartões, área de assinaturas
+  - **Editorial Elegante** — serif sobre fundo marfim, moldura dupla, ornamento losango, secções numeradas (01/02/…), tabela em hairlines, régua dupla no total, assinaturas centradas
+- **Motor de layout** (`lib/pdf/motor.ts`): cursor Y com paginação automática, texto rico inline (`**negrito**`/`*itálico*`) com quebra por palavra e justificação, tabelas com cabeçalho repetido em página nova, render markdown (parágrafos/listas/títulos/tabelas, markers `TABELA_CRONOGRAMA_*`), saneamento WinAnsi (emojis removidos, acentos PT preservados)
+- **Conversores** (`lib/pdf/converter.ts`): cotação (Proposta+Cliente+Dono), narrativa IA (Doc A, sem tabela financeira), propostas avançadas (ProposalDocument)
+- **Envio ao cliente:** edge function `send-proposal-email` (JWT P0-C3 + CORS allowlist P0-C4 + Resend com PDF anexo base64 ≤3 MB) + `propostaEmailService`; envio bem-sucedido marca a proposta `enviada`
+- **Modelo por omissão:** localStorage (`ps_pdf_template_default`); galeria com miniaturas em `/admin/templates` (TemplateManager reescrito — sem CodeMirror, sem CRUD de HTML)
 
 ### 3.7 Blueprint Engine (Propostas Avançadas)
 
@@ -208,6 +211,65 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 ## 4. Histórico de Mudanças
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
+
+### [2026-09-01] — Geração em PDF com 2 templates modernos + envio por email ao cliente
+
+**Tipo:** refactor arquitectural — decisão de produto (reverte o HTML-only do mesmo dia)
+**Branch:** `feature/multi-user-hierarchy`
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+Directriz do utilizador: **ficheiros em modelo PDF (não HTML), enviáveis aos clientes, eliminar todos os templates antigos e recomeçar com 2 templates modernos**. Todo o pipeline HTML-only (manhã) foi substituído por um motor PDF vectorial novo: capa autoral, texto rico justificado, tabelas paginadas e envio directo por email com anexo.
+
+**Removido (pipeline HTML-only, commit 04044c4):**
+
+1. `src/lib/html/` (htmlDocument.ts, narrativaHtml.ts) — documentos HTML autónomos e botão Imprimir
+2. `src/lib/advanced/advancedPdfRenderer.ts` — 4 estilos HTML + `openHtmlPreview`/`downloadProposalHtml`
+3. `src/services/pdfTemplateService.ts` — CRUD da tabela `pdf_templates` + motor de placeholders `{{}}` + `DEFAULT_HTML_TEMPLATE` + `renderTemplatePreview` (DOMPurify)
+4. `markdownToHtml` do `documentModel.ts` (HTML-specific; o parser markdown do PDF vive em `lib/pdf/markdown.ts`)
+5. Deps: `@uiw/react-codemirror`, `@codemirror/lang-html`, `codemirror` (só usados pelo editor de HTML do TemplateManager), `dompurify`, `@types/dompurify` — desinstalados
+
+**Adicionado (novo motor `src/lib/pdf/`, 10 ficheiros):**
+
+1. **`tipos.ts`/`utils.ts`** — modelo `DadosPropostaPdf` unificado; cores derivadas (clarear/escurecer/luminância), MZN pt-MZ, `limparTextoPdf` (WinAnsi-safe: remove emojis, preserva acentos), `medirLogotipo` (PNG/JPEG de data URL)
+2. **`markdown.ts`** — parser markdown-lite → blocos (títulos/parágrafos/listas/tabelas) com inline `**bold**`/`*italic*`; markers `TABELA_CRONOGRAMA_*` suportados
+3. **`motor.ts`** — `MotorPdf` sobre jsPDF: cursor Y + `garantirEspaco` (paginação automática), `paragrafo` (texto rico com quebra por palavra e **justificação real com distribuição de espaços**), `tabela` (cabeçalho repetido em página nova, zebra opcional), `markdown` (render por estilos do template), rodapés aplicados a todas as páginas no final. Correcção importante: `charSpace` do jsPDF é em unidades do documento e o `align:center/right` nativo ignora-o — o motor mede a largura (texto + tracking) e posiciona manualmente
+4. **`templateExecutivo.ts`** — “Executivo Moderno”: capa com banda gradiente (36 faixas interpoladas), anéis decorativos com GState opacidade, chip de logotipo, título de cliente, destinatário + número/data na base da banda, cartões Cliente/Emitente, cartão financeiro de total, secções numeradas em chips, tabela zebra, barra TOTAL, cartões de pagamento, assinaturas
+5. **`templateEditorial.ts`** — “Editorial Elegante”: fundo marfim por página, moldura dupla, rótulo com réguas laterais medidas, título serif grande, bloco “Proposta preparada para” emoldurado com losango, total com régua dupla, secções numeradas 01/02, tabela hairline, lista de pagamento com valores à direita, assinaturas centradas
+6. **`converter.ts`** — `construirDadosPdf` (cotação: itens + totais + pagamento do Dono), `construirDadosNarrativaPdf` (Doc A IA), `converterDocumentoAvancado` (fluxo avançado), `seccoesParaPdf` (ordem canónica + toggles)
+7. **`templates.ts`/`gerar.ts`/`index.ts`** — metadados + omissão em localStorage; `gerarPropostaPdf`/`baixarPropostaPdf`/`previsualizarPdf` (blob URL)/`pdfPropostaBase64` (email)
+8. **`src/lib/seccoes.ts`** — `SECTION_LABELS` extraídas para módulo puro (re-exportadas por `propostaAiService` para não partir imports; o conversor de PDF deixa de puxar o Supabase)
+9. **Edge function `send-proposal-email`** — JWT (P0-C3) + CORS allowlist (P0-C4), valida email/`.pdf`/≤3MB, Resend com anexo base64, corpo de email da marca; sem RESEND_API_KEY devolve `warning` (não falha)
+10. **`src/services/propostaEmailService.ts`** — gera o PDF e invoca a função; resultado `{sucesso, avisoSemApiChave, erro}` sem lançar
+
+**UI (4 páginas):**
+
+- **ResumoProposta:** select “Modelo:” (2 templates), **Pré-visualizar** (PDF em nova janela), **Baixar PDF**, **Enviar Email** (modal: destinatário pré-preenchido, assunto, mensagem; envio marca status `enviada` se rascunho)
+- **GerarPropostaIA:** “Proposta (PDF)” (Doc A, template por omissão, `markExported` preservado), “Pré-visualizar” novo botão, “Cotação (PDF)” navega para o Resumo
+- **RevisaoProposta (avançadas):** “Exportar PDF” + pré-visualização PDF (status `exportada` mantido)
+- **TemplateManager:** reescrito como galeria dos 2 modelos com miniaturas CSS puras, características e “Definir como omissão” (localStorage) — sem CodeMirror/CRUD/DB
+
+#### Breaking Changes
+
+- Templates HTML da tabela `pdf_templates` deixam de ser lidos/previewados (a tabela permanece na DB, inerte — sem migration). `PdfTemplateService`, `renderTemplate`, `DEFAULT_HTML_TEMPLATE`, `gerarHtmlNarrativa`, `downloadHtmlFile`, `openHtmlPreview`, `downloadProposalHtml`, `markdownToHtml` removidos (zero callers — verificado por grep)
+
+#### Validação
+
+- `tsc --noEmit`: **0 erros** · `eslint` (12 ficheiros/dirs tocados): **0 problemas** (1 `any` pre-existing em `propostaAiService` corrigido)
+- `vitest`: **16 testes** (15 pass + 1 skipped `PREVIEW_PDF`) — suite nova `geracaoPdf.test.ts`: parser markdown, saneamento WinAnsi, nome de ficheiro, `seccoesParaPdf`, geração real dos 2 templates (páginas, tamanho, base64 `%PDF`), Doc A, proposta mínima
+- `vite build`: ok (11.6s) — jspdf em chunk próprio (416 kB min / 137 kB gzip, carregado apenas nas rotas de exportação); `html2canvas.esm` é chunk **lazy interno do jspdf 4** (nunca carregado — `.html()` não é usado)
+- QA visual assistido (VLM sobre renders 90 DPI de ambos os templates): colisão capa/banda corrigida, régua do rótulo Editorial reposicionada por medição (PyMuPDF: centragem 298.3 vs 297.6 pt, gap 14 pt), espaçamento entre palavras verificado objectivamente (0 gaps < 0.3 pt)
+
+#### Rollback
+
+- `git revert <commit>` (reinstalar deps removidas: `npm i @uiw/react-codemirror @codemirror/lang-html codemirror dompurify @types/dompurify`)
+
+#### Notas de Segurança
+
+- `send-proposal-email`: herda verifyAuth (JWT obrigatório) + CORS allowlist do `_shared`; conteúdo do email passa por `escapeHtml`; anexo limitado a 3 MB; endereço validado por regex
+- PDF é desenhado com primitivas jsPDF (sem `eval`/HTML injectado) — sem superfície XSS nova; o nome do ficheiro é sanitizado
+- Sem alterações de RLS/DB
 
 ### [2026-09-01] — Geração de propostas exclusivamente via HTML (jsPDF/html2canvas removidos)
 

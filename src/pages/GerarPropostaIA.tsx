@@ -3,8 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
-import { gerarHtmlNarrativa } from '@/lib/html/narrativaHtml';
-import { downloadHtmlFile } from '@/lib/html/htmlDocument';
+import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateDefault } from '@/lib/pdf';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import {
   Loader2, Sparkles, FileText, RotateCw, Save,
-  ArrowLeft, Info,
+  ArrowLeft, Info, Eye,
   CheckCircle2, ChevronRight, Download, FileSpreadsheet,
 } from 'lucide-react';
 import { calcularTotal } from '@/lib/calculos';
@@ -220,27 +219,33 @@ export default function GerarPropostaIA() {
   };
 
   // ---- Export (Doc A = proposta narrativa, Doc B = cotacao) ----
-  // Geração exclusivamente em HTML: o ficheiro .html é autónomo
-  // (PDF via Imprimir do browser a partir do documento HTML).
+  // Doc A: PDF vectorial com o template por omissão (narrativa IA
+  // sem tabela financeira); a cotação (Doc B) é gerada no Resumo.
   const [isExporting, setIsExporting] = useState(false);
 
-  const handleExportProposta = async () => {
+  const handleExportProposta = async (modo: 'download' | 'preview' = 'download') => {
     if (!proposta || !dono || !seccoes) return;
     setIsExporting(true);
     try {
-      const html = gerarHtmlNarrativa(proposta, dono, seccoes, includedSections);
-      downloadHtmlFile(html, `Proposta-${proposta.numero}.html`);
+      const dados = construirDadosNarrativaPdf(proposta, dono, seccoes, includedSections);
+      if (modo === 'download') {
+        baixarPropostaPdf(dados, obterTemplateDefault());
+      } else {
+        previsualizarPdf(dados, obterTemplateDefault());
+      }
       if (propostaAiId) {
         try {
           await propostaAiService.markExported(propostaAiId);
         } catch {
-          console.warn('Falha ao marcar proposta como exportada (HTML gerado com sucesso)');
+          console.warn('Falha ao marcar proposta como exportada (PDF gerado com sucesso)');
         }
       }
-      toast.success('Proposta comercial exportada (HTML)');
+      if (modo === 'download') {
+        toast.success('Proposta comercial exportada (PDF)');
+      }
     } catch (err) {
-      console.error('Erro ao exportar HTML narrativo:', err);
-      toast.error('Erro ao gerar HTML da proposta');
+      console.error('Erro ao exportar PDF narrativo:', err);
+      toast.error('Erro ao gerar PDF da proposta');
     } finally {
       setIsExporting(false);
     }
@@ -248,7 +253,7 @@ export default function GerarPropostaIA() {
 
   const handleExportCotacao = () => {
     if (!proposta || !dono) return;
-    toast.info('A abrir cotacao para gerar HTML...');
+    toast.info('A abrir cotacao para gerar PDF...');
     navigate(`/proposta/${id}`);
   };
 
@@ -531,11 +536,21 @@ export default function GerarPropostaIA() {
                 className="gap-1.5"
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" />
-                Cotacao (HTML)
+                Cotacao (PDF)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleExportProposta('preview')}
+                disabled={isExporting}
+                className="gap-1.5"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Pré-visualizar
               </Button>
               <Button
                 size="sm"
-                onClick={handleExportProposta}
+                onClick={() => handleExportProposta('download')}
                 disabled={isExporting}
                 className="gap-1.5 bg-violet-600 hover:bg-violet-700"
               >
@@ -544,7 +559,7 @@ export default function GerarPropostaIA() {
                 ) : (
                   <Download className="h-3.5 w-3.5" />
                 )}
-                Proposta (HTML)
+                Proposta (PDF)
               </Button>
             </Fragment>
           )}

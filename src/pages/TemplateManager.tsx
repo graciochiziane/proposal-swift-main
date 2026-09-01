@@ -1,365 +1,217 @@
 // ============================================================
-// Template Manager — Página de importação de templates HTML
+// Modelos de Proposta PDF (galeria)
 //
-// Admin cria HTML externamente (VS Code, etc.) e cola aqui.
-// Preview com dados de exemplo. Save → disponível para a org.
+// Mostra os 2 templates modernos incorporados (Executivo e
+// Editorial) com miniaturas CSS, características e escolha do
+// modelo por omissão (localStorage). Os modelos são gerados em
+// código (PDF vectorial) — já não há templates HTML em base de
+// dados nem editor de HTML.
 // ============================================================
 
-import { useState, useEffect, useRef } from 'react';
-import {
-  Plus, Save, Trash2, Eye, Loader2,
-  FileCode, Code, Upload,
-} from 'lucide-react';
-import CodeMirror from '@uiw/react-codemirror';
-import { html as htmlLang } from '@codemirror/lang-html';
-import { EditorView } from '@codemirror/view';
-import { PdfTemplateService, AVAILABLE_PLACEHOLDERS, renderTemplatePreview } from '@/services/pdfTemplateService';
-import type { PdfTemplate } from '@/services/pdfTemplateService';
-import type { Proposta, Cliente, DonoProposta } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { TEMPLATES_PDF, obterTemplateDefault, definirTemplateDefault } from '@/lib/pdf';
+import type { PdfTemplateId } from '@/lib/pdf';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Check } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Dados de exemplo para preview
-const SAMPLE_PROPOSTA: Proposta = {
-  id: 'sample', numero: 'PROP-202608-0001', data: '2026-08-14',
-  subtotal: 100000, descontoTipo: 'percentual', descontoValor: 10000,
-  ivaPercentual: 16, total: 104400, observacoes: 'Proposta válida por 30 dias.',
-  itens: [
-    { id: '1', nome: 'Desenvolvimento de Website', quantidade: 1, precoUnitario: 80000, subtotal: 80000 },
-    { id: '2', nome: 'Hosting (12 meses)', quantidade: 1, precoUnitario: 20000, subtotal: 20000 },
-  ],
-} as Proposta;
+/** Miniatura CSS do modelo Executivo (banda escura + cartões) */
+function MiniaturaExecutivo({ cor }: { cor: string }): JSX.Element {
+  return (
+    <div className="w-full aspect-[210/297] rounded-md overflow-hidden bg-white border border-border shadow-sm relative">
+      {/* banda de capa com gradiente */}
+      <div
+        className="h-[38%] w-full relative"
+        style={{ background: `linear-gradient(180deg, ${cor}dd 0%, ${cor} 100%)` }}
+      >
+        <div
+          className="absolute rounded-full"
+          style={{ right: '-12%', top: '6%', width: '55%', aspectRatio: '1', border: '2px solid rgba(255,255,255,0.35)' }}
+        />
+        <div className="absolute left-[8%] top-[14%] w-[42%]">
+          <div className="h-1.5 w-14 bg-white/80 rounded-sm" />
+        </div>
+        <div className="absolute left-[8%] top-[38%]">
+          <div className="h-2.5 w-24 bg-white rounded-sm" />
+          <div className="h-2.5 w-16 bg-white/70 rounded-sm mt-1.5" />
+        </div>
+        <div className="absolute left-[8%] bottom-[10%] w-6 h-0.5 bg-white" />
+      </div>
+      {/* cartões de dados */}
+      <div className="px-[8%] pt-[6%] flex gap-[4%]">
+        <div className="flex-1 h-10 rounded-sm bg-slate-100" />
+        <div className="flex-1 h-10 rounded-sm bg-slate-100" />
+      </div>
+      {/* cartão financeiro */}
+      <div className="px-[8%] pt-[4%]">
+        <div className="h-9 rounded-sm" style={{ background: cor }} />
+      </div>
+      {/* linhas de conteúdo */}
+      <div className="px-[8%] pt-[5%] space-y-1.5">
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-[2px]" style={{ background: cor }} />
+          <div className="h-1.5 w-2/3 bg-slate-300 rounded-sm" />
+        </div>
+        <div className="h-1 w-full bg-slate-200 rounded-sm" />
+        <div className="h-1 w-5/6 bg-slate-200 rounded-sm" />
+        <div className="h-1 w-full bg-slate-200 rounded-sm" />
+        <div className="h-1 w-2/3 bg-slate-200 rounded-sm" />
+      </div>
+      {/* tabela */}
+      <div className="px-[8%] pt-[5%]">
+        <div className="h-3.5 rounded-sm" style={{ background: cor }} />
+        <div className="h-2.5 bg-slate-50 border border-b border-slate-200" />
+        <div className="h-2.5 bg-slate-100 border border-b border-slate-200" />
+        <div className="h-2.5 bg-slate-50 border border-b border-slate-200" />
+      </div>
+    </div>
+  );
+}
 
-const SAMPLE_CLIENTE: Cliente = {
-  id: 'sample', nome: 'João Silva', empresa: 'Empresa XYZ Lda',
-  email: 'joao@xyz.co.mz', telefone: '84 123 4567',
-  nuit: '1002003004', endereco: 'Av. Julius Nyerere, Maputo',
-};
-
-const SAMPLE_EMPRESA: DonoProposta = {
-  nome: 'PropostaJá', cargo: 'Director Comercial', empresa: 'PropostaJá Lda',
-  contacto: '+258 84 000 0000', nuit: '4005006007', endereco: 'Maputo, Moçambique',
-  logotipo: '', corPrimaria: '#0B5394',
-  email: 'contacto@propostaja.com', telefone: '+258 84 000 0000',
-  dadosBancarios: { ativo: false, banco: '', numeroConta: '', nib: '' },
-  mobileMoney: {
-    mpesa: { ativo: false, numero: '' },
-    emola: { ativo: false, numero: '' },
-    mkesh: { ativo: false, numero: '' },
-  },
-};
-
-const DEFAULT_TEMPLATE = `<style>
-body { font-family: Arial, sans-serif; margin: 0; padding: 40px; color: #333; }
-.header { border-bottom: 3px solid #0B5394; padding-bottom: 20px; margin-bottom: 30px; }
-.header h1 { color: #0B5394; margin: 0; font-size: 28px; }
-.header p { color: #666; margin: 5px 0 0 0; }
-.cliente { margin-bottom: 30px; }
-.cliente h2 { font-size: 14px; color: #999; margin: 0 0 5px 0; text-transform: uppercase; }
-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-th { background: #0B5394; color: white; padding: 10px; text-align: left; font-size: 13px; }
-td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 13px; }
-.totais { text-align: right; margin-top: 20px; }
-.totais .linha { margin: 5px 0; font-size: 14px; }
-.totais .total { font-size: 22px; color: #0B5394; font-weight: bold; }
-.footer { margin-top: 40px; border-top: 1px solid #ddd; padding-top: 20px; font-size: 12px; color: #999; }
-</style>
-
-<div class="header">
-  <h1>PROPOSTA {{proposta.numero}}</h1>
-  <p>{{proposta.data}}</p>
-</div>
-
-<div class="cliente">
-  <h2>Cliente</h2>
-  <p><strong>{{cliente.nome}}</strong></p>
-  <p>{{cliente.empresa}}</p>
-  <p>{{cliente.telefone}} | {{cliente.email}}</p>
-  <p>NUIT: {{cliente.nuit}}</p>
-</div>
-
-{{{items}}}
-
-<div class="totais">
-  <div class="linha">Subtotal: {{proposta.subtotal}}</div>
-  <div class="linha">Desconto: {{proposta.desconto}}</div>
-  <div class="linha">IVA (16%): {{proposta.iva}}</div>
-  <div class="total">Total: {{proposta.total}}</div>
-</div>
-
-<p>{{observacoes}}</p>
-
-<div class="footer">
-  <p>{{empresa.nome}} | NUIT: {{empresa.nuit}} | {{empresa.endereco}}</p>
-  <p>{{empresa.email}} | {{empresa.telefone}}</p>
-</div>`;
+/** Miniatura CSS do modelo Editorial (marfim + moldura + serif) */
+function MiniaturaEditorial({ cor }: { cor: string }): JSX.Element {
+  return (
+    <div
+      className="w-full aspect-[210/297] rounded-md overflow-hidden border border-border shadow-sm relative"
+      style={{ background: '#FAF8F4' }}
+    >
+      {/* moldura dupla */}
+      <div className="absolute inset-[5%] pointer-events-none" style={{ border: `1px solid ${cor}55`, borderRadius: 2 }} />
+      <div className="absolute inset-[6.5%] pointer-events-none" style={{ border: '0.5px solid rgba(0,0,0,0.08)', borderRadius: 2 }} />
+      {/* rótulo centrado */}
+      <div className="pt-[10%] flex items-center justify-center gap-3">
+        <div className="h-px w-6" style={{ background: `${cor}66` }} />
+        <div className="text-[9px] tracking-[0.25em]" style={{ color: cor, fontFamily: 'Georgia, serif', fontWeight: 700 }}>
+          PROPOSTA
+        </div>
+        <div className="h-px w-6" style={{ background: `${cor}66` }} />
+      </div>
+      {/* empresa */}
+      <div className="pt-[6%] flex justify-center">
+        <div className="h-1.5 w-20 bg-stone-400 rounded-sm" />
+      </div>
+      {/* título grande */}
+      <div className="pt-[14%] px-[14%] space-y-2">
+        <div className="h-3 w-full bg-stone-700 rounded-sm" style={{ fontFamily: 'Georgia, serif' }} />
+        <div className="h-3 w-1/2 bg-stone-700 rounded-sm" style={{ fontFamily: 'Georgia, serif' }} />
+        {/* losango */}
+        <div className="flex justify-center pt-3">
+          <div className="w-2 h-2 rotate-45" style={{ background: cor }} />
+        </div>
+        <div className="h-1.5 w-2/3 mx-auto bg-stone-300 rounded-sm" />
+        <div className="h-2 w-1/2 mx-auto bg-stone-500 rounded-sm" />
+      </div>
+      {/* total */}
+      <div className="pt-[8%] px-[20%]">
+        <div className="h-px w-full" style={{ background: `${cor}88` }} />
+        <div className="h-2 w-1/2 mx-auto mt-2 rounded-sm" style={{ background: cor }} />
+      </div>
+      {/* secções numeradas */}
+      <div className="pt-[6%] px-[14%] space-y-2.5">
+        <div className="flex items-baseline gap-2">
+          <div className="text-[11px] italic" style={{ color: `${cor}99`, fontFamily: 'Georgia, serif' }}>01</div>
+          <div className="h-1.5 w-2/5 bg-stone-500 rounded-sm" />
+        </div>
+        <div className="h-px w-full bg-stone-200" />
+        <div className="h-1 w-full bg-stone-200 rounded-sm" />
+        <div className="h-1 w-5/6 bg-stone-200 rounded-sm" />
+        <div className="flex items-baseline gap-2 pt-1">
+          <div className="text-[11px] italic" style={{ color: `${cor}99`, fontFamily: 'Georgia, serif' }}>02</div>
+          <div className="h-1.5 w-1/3 bg-stone-500 rounded-sm" />
+        </div>
+        <div className="h-px w-full bg-stone-200" />
+        <div className="h-1 w-2/3 bg-stone-200 rounded-sm" />
+      </div>
+    </div>
+  );
+}
 
 export default function TemplateManager() {
-  const [templates, setTemplates] = useState<PdfTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showEditor, setShowEditor] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [templateDefault, setTemplateDefault] = useState<PdfTemplateId>(obterTemplateDefault());
 
-  // Form state
-  const [nome, setNome] = useState('');
-  const [descricao, setDescricao] = useState('');
-  const [html, setHtml] = useState(DEFAULT_TEMPLATE);
-  const [planTier, setPlanTier] = useState<'free' | 'pro' | 'business'>('free');
-  const [saving, setSaving] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const previewRef = useRef<HTMLDivElement>(null);
-
-  const loadTemplates = async () => {
-    setLoading(true);
-    try {
-      const data = await PdfTemplateService.getTemplates();
-      setTemplates(data);
-    } catch (err) {
-      toast.error('Erro ao carregar templates');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+  const activar = (id: PdfTemplateId): void => {
+    definirTemplateDefault(id);
+    setTemplateDefault(id);
+    const info = TEMPLATES_PDF.find(t => t.id === id);
+    toast.success(`Modelo "${info?.nome ?? id}" definido como omissão`);
   };
-
-  useEffect(() => { loadTemplates(); }, []);
-
-  const handleSave = async () => {
-    if (!nome.trim() || !html.trim()) {
-      toast.error('Nome e HTML são obrigatórios');
-      return;
-    }
-    setSaving(true);
-    try {
-      if (editingId) {
-        await PdfTemplateService.updateTemplate(editingId, { nome, descricao, html, plan_tier: planTier });
-        toast.success('Template actualizado');
-      } else {
-        await PdfTemplateService.createTemplate({ nome, descricao, html, plan_tier: planTier });
-        toast.success('Template criado');
-      }
-      setShowEditor(false);
-      setEditingId(null);
-      setNome('');
-      setDescricao('');
-      setHtml(DEFAULT_TEMPLATE);
-      loadTemplates();
-    } catch (err) {
-      toast.error('Erro ao salvar template');
-      console.error(err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleEdit = (t: PdfTemplate) => {
-    setEditingId(t.id);
-    setNome(t.nome);
-    setDescricao(t.descricao);
-    setHtml(t.html);
-    setPlanTier(t.plan_tier);
-    setShowEditor(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Eliminar este template?')) return;
-    try {
-      await PdfTemplateService.deleteTemplate(id);
-      toast.success('Template eliminado');
-      loadTemplates();
-    } catch {
-      toast.error('Erro ao eliminar');
-    }
-  };
-
-  const handlePreview = () => {
-    const filled = renderTemplatePreview(html, SAMPLE_PROPOSTA, SAMPLE_CLIENTE, SAMPLE_EMPRESA);
-    if (previewRef.current) {
-      previewRef.current.innerHTML = filled;
-    }
-    setShowPreview(true);
-  };
-
-  if (loading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Templates de Proposta (HTML)</h1>
-          <p className="text-sm text-muted-foreground">
-            Importe templates HTML criados externamente (VS Code, CodePen, etc.)
-          </p>
-        </div>
-        {!showEditor && (
-          <Button onClick={() => { setShowEditor(true); setEditingId(null); setNome(''); setDescricao(''); setHtml(DEFAULT_TEMPLATE); }} className="gap-2">
-            <Plus className="h-4 w-4" /> Importar Template
-          </Button>
-        )}
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Modelos de Proposta PDF</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Os documentos são gerados directamente em PDF vectorial, prontos a enviar por email ao cliente.
+          Escolha o modelo usado por omissão nas exportações.
+        </p>
       </div>
 
-      {/* Editor */}
-      {showEditor && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Code className="h-5 w-5" />
-              {editingId ? 'Editar Template' : 'Importar Novo Template'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Nome + descrição */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Nome *</Label>
-                <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Clássico Azul" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Plano</Label>
-                <select
-                  value={planTier}
-                  onChange={e => setPlanTier(e.target.value as 'free' | 'pro' | 'business')}
-                  className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm"
-                >
-                  <option value="free">Free (todos)</option>
-                  <option value="pro">Pro</option>
-                  <option value="business">Business</option>
-                </select>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Descrição</Label>
-              <Input value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Ex: Template clássico com cabeçalho azul" />
-            </div>
-
-            {/* HTML Code Editor — CodeMirror 6 com syntax highlight */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label>HTML do Template *</Label>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={handlePreview} className="gap-1">
-                    <Eye className="h-3.5 w-3.5" /> Pré-visualizar
-                  </Button>
+      <div className="grid gap-6 sm:grid-cols-2">
+        {TEMPLATES_PDF.map(template => {
+          const cor = template.id === 'editorial' ? '#8A6D3B' : '#1F4E79';
+          const activo = templateDefault === template.id;
+          return (
+            <Card
+              key={template.id}
+              className={`overflow-hidden transition-all ${activo ? 'ring-2 ring-primary' : 'hover:shadow-md'}`}
+            >
+              <CardContent className="p-6 space-y-5">
+                <div className="mx-auto w-44">
+                  {template.id === 'editorial'
+                    ? <MiniaturaEditorial cor={cor} />
+                    : <MiniaturaExecutivo cor={cor} />}
                 </div>
-              </div>
-              <div className="border border-border rounded-lg overflow-hidden">
-                <CodeMirror
-                  value={html}
-                  onChange={value => setHtml(value)}
-                  extensions={[htmlLang(), EditorView.lineWrapping]}
-                  theme="light"
-                  height="400px"
-                  basicSetup={{
-                    lineNumbers: true,
-                    highlightActiveLine: true,
-                    autocompletion: true,
-                    bracketMatching: true,
-                    closeBrackets: true,
-                    indentOnInput: true,
-                  }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Crie o HTML no seu editor preferido (VS Code, CodePen, etc.) e cole aqui.
-                Use <code className="bg-muted px-1 rounded">{'{{placeholders}}'}</code> para dados dinâmicos.
-              </p>
-            </div>
 
-            {/* Placeholders reference */}
-            <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground font-medium">
-                Ver placeholders disponíveis ({AVAILABLE_PLACEHOLDERS.length})
-              </summary>
-              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                {AVAILABLE_PLACEHOLDERS.map(p => (
-                  <div key={p.placeholder} className="flex items-start gap-2 text-xs">
-                    <code className="bg-muted px-1.5 py-0.5 rounded text-primary shrink-0">{p.placeholder}</code>
-                    <span className="text-muted-foreground">{p.description}</span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-bold text-lg">{template.nome}</h3>
+                    {activo && (
+                      <Badge className="gap-1">
+                        <Check className="h-3 w-3" />
+                        Omissão
+                      </Badge>
+                    )}
                   </div>
-                ))}
-              </div>
-            </details>
-
-            {/* Preview */}
-            {showPreview && (
-              <div className="space-y-2">
-                <Label>Pré-visualização (com dados de exemplo)</Label>
-                <div
-                  ref={previewRef}
-                  className="border border-border rounded-lg p-4 bg-white overflow-auto max-h-[600px]"
-                />
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => { setShowEditor(false); setEditingId(null); }}>
-                Cancelar
-              </Button>
-              <Button onClick={handleSave} disabled={saving || !nome.trim() || !html.trim()} className="gap-2">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {editingId ? 'Actualizar' : 'Salvar Template'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* List */}
-      {!showEditor && (
-        <>
-          {templates.length === 0 ? (
-            <Card>
-              <CardContent className="p-8 text-center space-y-4">
-                <div className="p-4 rounded-full bg-muted mx-auto w-fit">
-                  <FileCode className="h-10 w-10 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground leading-relaxed">{template.descricao}</p>
                 </div>
-                <h2 className="text-lg font-semibold">Nenhum template ainda</h2>
-                <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                  Crie templates HTML externamente e importe-os para o PropostaJá.
-                  Use placeholders como <code className="bg-muted px-1 rounded">{'{{cliente.nome}}'}</code> para dados dinâmicos.
-                </p>
-                <Button onClick={() => setShowEditor(true)} className="gap-2">
-                  <Upload className="h-4 w-4" /> Importar primeiro template
+
+                <ul className="text-sm space-y-1.5">
+                  {template.caracteristicas.map(carac => (
+                    <li key={carac} className="flex items-start gap-2 text-muted-foreground">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                      {carac}
+                    </li>
+                  ))}
+                </ul>
+
+                <Button
+                  className="w-full"
+                  variant={activo ? 'secondary' : 'default'}
+                  disabled={activo}
+                  onClick={() => activar(template.id)}
+                >
+                  {activo ? 'Modelo activo' : 'Definir como omissão'}
                 </Button>
               </CardContent>
             </Card>
-          ) : (
-            <div className="space-y-3">
-              {templates.map(t => (
-                <Card key={t.id} className="hover:border-primary/30 transition-colors">
-                  <CardContent className="p-4 flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h3 className="font-semibold">{t.nome}</h3>
-                        {t.is_system && <Badge variant="secondary">Sistema</Badge>}
-                        <Badge variant="outline" className="capitalize">{t.plan_tier}</Badge>
-                      </div>
-                      {t.descricao && <p className="text-sm text-muted-foreground truncate">{t.descricao}</p>}
-                    </div>
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(t)} className="gap-1">
-                        <Code className="h-4 w-4" /> Editar
-                      </Button>
-                      {!t.is_system && (
-                        <Button size="sm" variant="ghost" onClick={() => handleDelete(t.id)} className="text-red-500 hover:text-red-600">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+          );
+        })}
+      </div>
+
+      <div className="rounded-xl border bg-secondary/40 p-5 text-sm text-muted-foreground space-y-2">
+        <p className="font-semibold text-foreground">Como funciona</p>
+        <p>
+          Cada modelo deriva a paleta da cor primária definida nas Configurações (marca da empresa) e inclui
+          logotipo, dados do cliente e emitente, tabela de itens com totais, cronograma, observações, dados de
+          pagamento e áreas de assinatura.
+        </p>
+        <p>
+          Para enviar uma proposta: abra a proposta &gt; <strong>Baixar PDF</strong> (ficheiro para anexar
+          manualmente) ou <strong>Enviar Email</strong> (o PDF é gerado e enviado automaticamente ao cliente).
+        </p>
+      </div>
     </div>
   );
 }

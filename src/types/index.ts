@@ -67,8 +67,8 @@ export interface DonoProposta {
   corPrimaria: string; // hex color
   dadosBancarios: DadosBancarios;
   mobileMoney: MobileMoney;
-  // Opcionais — usados pelos placeholders {{empresa.email}}/{{empresa.telefone}}
-  // dos templates HTML (ver pdfTemplateService.renderTemplate)
+  // Opcionais — impressos no bloco Emitente dos modelos PDF
+  // (ver src/lib/pdf/converter.ts)
   email?: string;
   telefone?: string;
 }

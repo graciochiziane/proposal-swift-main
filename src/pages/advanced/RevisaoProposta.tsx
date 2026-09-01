@@ -24,9 +24,8 @@ import {
 import { generateSectionContent, generateAllSections } from '@/services/propostaAiSectionService';
 import {
   buildProposalDocument,
-  openHtmlPreview,
-  downloadProposalHtml,
 } from '@/lib/advanced';
+import { converterDocumentoAvancado, previsualizarPdf, baixarPropostaPdf, obterTemplateDefault } from '@/lib/pdf';
 import { useAuth } from '@/hooks/useAuth';
 import { ProfileService } from '@/services/profileService';
 import { ClienteService } from '@/services/clienteService';
@@ -54,8 +53,8 @@ export default function RevisaoProposta() {
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
 
-  // HTML export state
-  const [exportingHtml, setExportingHtml] = useState(false);
+  // PDF export state
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Load all data
   useEffect(() => {
@@ -266,7 +265,7 @@ export default function RevisaoProposta() {
   };
 
   // Build document and open preview
-  // (HTML numa nova janela, com botão Imprimir embutido)
+  // (PDF vectorial numa nova janela, com o template por omissão)
   const handlePreview = () => {
     if (!proposal || !blueprint) return;
     const doc = buildProposalDocument({
@@ -278,13 +277,18 @@ export default function RevisaoProposta() {
       companyInfo: getCompanyInfo(),
       clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
     });
-    openHtmlPreview(doc);
+    try {
+      previsualizarPdf(converterDocumentoAvancado(doc), obterTemplateDefault());
+    } catch (err) {
+      console.error('PDF preview error:', err);
+      toast.error('Erro ao gerar a pré-visualização do PDF.');
+    }
   };
 
-  // Export as standalone HTML file
-  const handleExportHtml = async () => {
+  // Export as PDF file (ready to send to the client)
+  const handleExportPdf = async () => {
     if (!proposal || !blueprint) return;
-    setExportingHtml(true);
+    setExportingPdf(true);
     try {
       const doc = buildProposalDocument({
         proposalId: proposal.id,
@@ -295,15 +299,15 @@ export default function RevisaoProposta() {
         companyInfo: getCompanyInfo(),
         clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
       });
-      downloadProposalHtml(doc);
+      baixarPropostaPdf(converterDocumentoAvancado(doc), obterTemplateDefault());
       // Update proposal status to 'exportada'
       await updateAdvancedProposalStatus(proposal.id, 'exportada');
-      toast.success('Proposta exportada em HTML! Para PDF, abrir o ficheiro e Imprimir.');
+      toast.success('Proposta exportada em PDF, pronta a enviar ao cliente!');
     } catch (err) {
-      console.error('HTML export error:', err);
-      toast.error('Erro ao gerar HTML. Tente usar Pre-visualizar > Imprimir.');
+      console.error('PDF export error:', err);
+      toast.error('Erro ao gerar PDF da proposta.');
     } finally {
-      setExportingHtml(false);
+      setExportingPdf(false);
     }
   };
 
@@ -370,10 +374,10 @@ export default function RevisaoProposta() {
             <Eye className="h-4 w-4" />
             Pre-visualizar
           </button>
-          <button onClick={handleExportHtml} disabled={generating || exportingHtml}
+          <button onClick={handleExportPdf} disabled={generating || exportingPdf}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm disabled:opacity-50">
-            {exportingHtml ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            {exportingHtml ? 'A gerar HTML...' : 'Exportar HTML'}
+            {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {exportingPdf ? 'A gerar PDF...' : 'Exportar PDF'}
           </button>
           <button onClick={handleMarkReviewed} disabled={generating}
             className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm disabled:opacity-50">

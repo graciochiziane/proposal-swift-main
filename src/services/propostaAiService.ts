@@ -45,18 +45,11 @@ export interface GenerateResult {
 }
 
 // ---- Labels ----
+// Labels canónicas extraídas para src/lib/seccoes.ts (módulo puro,
+// partilhado com o conversor de PDF); re-exportadas aqui para
+// manter os imports existentes.
 
-export const SECTION_LABELS: Record<string, string> = {
-  contexto: 'Contexto do Cliente',
-  problema: 'Problema Identificado',
-  solucao: 'Solucao Proposta',
-  beneficios: 'Beneficios Esperados',
-  impacto: 'Impacto Quantificavel',
-  escopo: 'Escopo Detalhado',
-  cronograma: 'Cronograma',
-  condicoes: 'Condicoes Especiais',
-  investimento: 'Resumo de Investimento',
-};
+export { SECTION_LABELS } from '@/lib/seccoes';
 
 export const BASE_FIELDS = ['contexto', 'problema', 'solucao', 'beneficios'] as const;
 export const ADVANCED_FIELDS = ['impacto', 'escopo', 'cronograma', 'condicoes'] as const;
@@ -118,7 +111,7 @@ export const propostaAiService = {
     if (error) {
       // Erro de rede/transporte (edge function nao reached)
       console.error('Edge function transport error:', error);
-      const httpStatus = (error as any).context?.status;
+      const httpStatus = (error as { context?: { status?: number } }).context?.status;
       const msg = httpStatus
         ? `Erro ${httpStatus}: ${error.message}`
         : error.message || 'Erro ao contactar o servidor';
