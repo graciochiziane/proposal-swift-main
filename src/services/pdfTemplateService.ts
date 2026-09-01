@@ -3,15 +3,17 @@
 //
 // Modelo: admin cria HTML externamente, cola no PropostaJá.
 // Placeholders {{}} são substituídos por dados reais.
-// Rendering: HTML → DOMPurify → html2canvas → jsPDF
+// Geração: HTML → DOMPurify → documento autónomo (.html)
+// PDF via Imprimir do browser (sem jsPDF/html2canvas).
+//
+// Nota: o nome do serviço/tabela (pdf_templates) é mantido
+// por compatibilidade com a DB; o OUTPUT é HTML.
 // ============================================================
 
 import { supabase } from '@/integrations/supabase/client';
 import { OrganizationService } from './organizationService';
 import type { Proposta, Cliente, DonoProposta } from '@/types';
 import DOMPurify from 'dompurify';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 
 // ---- Types ----
 
@@ -181,6 +183,15 @@ export function renderTemplate(
   const itemsHtml = generateItemsTable(proposta);
   result = result.replace(/\{\{\{items\}\}\}/g, itemsHtml);
 
+  // Blocos condicionais {{#campo}}...{{/campo}} — o bloco é
+  // removido quando o valor está vazio (evita caixas vazias)
+  result = result.replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_m, field: string, inner: string) => {
+    const conditionalValues: Record<string, string> = {
+      observacoes: proposta.observacoes || '',
+    };
+    return conditionalValues[field] ? inner : '';
+  });
+
   // Placeholders simples {{ }}
   const replacements: Record<string, string> = {
     '{{proposta.numero}}': proposta.numero || '',
@@ -247,79 +258,92 @@ function generateItemsTable(proposta: Proposta): string {
 }
 
 // ============================================================
-// PDF Renderer — HTML → DOMPurify → html2canvas → jsPDF
+// Template HTML incorporado (fallback)
 // ============================================================
 
 /**
- * Gera PDF a partir de um template HTML
+ * Template padrão EMBUTIDO no código — garante que a geração
+ * de propostas HTML funciona mesmo sem templates na DB
+ * (ex.: org nova antes de importar/criar templates).
  *
- * @param templateHtml HTML do template (com placeholders já substituídos)
- * @param fileName Nome do ficheiro (ex: Proposta-PROP-202608-0001.pdf)
+ * Usa exactamente os mesmos placeholders dos templates da DB.
  */
-export async function renderHtmlToPdf(
-  templateHtml: string,
-  fileName: string,
-): Promise<void> {
-  // 1. Sanitizar HTML (XSS protection)
-  const sanitized = DOMPurify.sanitize(templateHtml, {
-    ALLOWED_TAGS: [
-      'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'table', 'thead', 'tbody', 'tr', 'th', 'td',
-      'ul', 'ol', 'li', 'br', 'hr', 'img', 'a',
-      'strong', 'em', 'u', 'b', 'i', 'small', 'sub', 'sup',
-      'style', 'header', 'footer', 'section', 'article',
-    ],
-    ALLOWED_ATTR: ['style', 'class', 'id', 'href', 'src', 'alt', 'colspan', 'rowspan', 'width', 'height', 'align', 'valign'],
-  });
-
-  // 2. Criar container off-screen
-  const container = document.createElement('div');
-  container.style.cssText = 'position: absolute; left: -9999px; top: 0; width: 794px; padding: 0; background: white;';
-  container.innerHTML = sanitized;
-  document.body.appendChild(container);
-
-  try {
-    // 3. html2canvas → imagem
-    const canvas = await html2canvas(container, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: '#ffffff',
-    });
-
-    // 4. jsPDF → PDF
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = pageWidth;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-    let heightLeft = imgHeight;
-    let position = 0;
-
-    // Primeira página
-    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-
-    // Páginas adicionais
-    while (heightLeft > 0) {
-      position -= pageHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-    }
-
-    // 5. Download
-    pdf.save(fileName);
-  } finally {
-    // 6. Limpar container
-    document.body.removeChild(container);
-  }
-}
+export const DEFAULT_HTML_TEMPLATE = `<style>
+  body { font-family: "Inter", "Segoe UI", Arial, sans-serif; margin: 0; color: #1e293b; font-size: 11pt; line-height: 1.6; }
+  .doc { max-width: 186mm; margin: 0 auto; padding: 10mm 0 14mm; }
+  .header { border-bottom: 3px solid #0B5394; padding-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .header h1 { color: #0B5394; margin: 0; font-size: 24px; }
+  .header p { color: #64748b; margin: 4px 0 0; }
+  .header .badge { background: #0B5394; color: #fff; text-align: right; padding: 8px 14px; border-radius: 6px; }
+  .header .badge .num { font-weight: 700; font-size: 13px; }
+  .header .badge .meta { font-size: 10px; opacity: .9; }
+  .parties { display: flex; gap: 24px; margin: 24px 0; }
+  .party { flex: 1; }
+  .party h2 { font-size: 10px; letter-spacing: 1.5px; color: #0B5394; text-transform: uppercase; margin: 0 0 6px; }
+  .party .name { font-weight: 700; margin: 0 0 2px; }
+  .party p { margin: 2px 0; font-size: 9.5pt; color: #475569; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th { background: #0B5394; color: white; padding: 10px 12px; text-align: left; font-size: 12px; }
+  td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .totais { text-align: right; margin-top: 18px; }
+  .totais .linha { margin: 5px 0; color: #475569; }
+  .totais .total { font-size: 20px; color: #0B5394; font-weight: bold; border-top: 2px solid #0B5394; padding-top: 8px; margin-top: 6px; }
+  .obs { margin-top: 20px; padding: 14px; background: #f8fafc; border-left: 3px solid #0B5394; border-radius: 0 6px 6px 0; font-size: 10pt; color: #475569; }
+  .obs p { margin: 0; white-space: pre-wrap; }
+  .footer { margin-top: 36px; border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 11px; color: #94a3b8; }
+  @media print { .doc { max-width: none; padding: 0; } }
+</style>
+<div class="doc">
+  <div class="header">
+    <div>
+      <h1>PROPOSTA {{proposta.numero}}</h1>
+      <p>{{proposta.data}}</p>
+    </div>
+    <div class="badge">
+      <div class="num">{{cliente.nome}}</div>
+      <div class="meta">{{cliente.empresa}}</div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">
+      <h2>Cliente</h2>
+      <p class="name">{{cliente.nome}}</p>
+      <p>{{cliente.empresa}}</p>
+      <p>{{cliente.telefone}}</p>
+      <p>{{cliente.email}}</p>
+      <p>{{cliente.nuit}}</p>
+      <p>{{cliente.endereco}}</p>
+    </div>
+    <div class="party">
+      <h2>Emitente</h2>
+      <p class="name">{{empresa.nome}}</p>
+      <p>NUIT: {{empresa.nuit}}</p>
+      <p>{{empresa.endereco}}</p>
+      <p>{{empresa.email}}</p>
+      <p>{{empresa.telefone}}</p>
+    </div>
+  </div>
+  {{{items}}}
+  <div class="totais">
+    <div class="linha">Subtotal: {{proposta.subtotal}}</div>
+    <div class="linha">Desconto: {{proposta.desconto}}</div>
+    <div class="linha">IVA: {{proposta.iva}}</div>
+    <div class="total">Total: {{proposta.total}}</div>
+  </div>
+  {{#observacoes}}
+  <div class="obs">
+    <p>{{observacoes}}</p>
+  </div>
+  {{/observacoes}}
+  <div class="footer">
+    <p>{{empresa.nome}} · NUIT {{empresa.nuit}} · {{empresa.endereco}}</p>
+    <p>Documento HTML — imprimir ou guardar como PDF via browser</p>
+  </div>
+</div>`;
 
 /**
- * Preview do template (renderiza HTML num container sem gerar PDF)
+ * Preview do template (renderiza HTML num container sem gerar ficheiro)
  * Útil para preview no editor de templates
  */
 export function renderTemplatePreview(

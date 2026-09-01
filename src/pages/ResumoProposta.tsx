@@ -4,22 +4,20 @@ import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { calcularTotal } from '@/lib/calculos';
-import { gerarPDF, getAllTemplates } from '@/lib/pdf';
-import { PdfTemplateService, renderTemplate, renderHtmlToPdf } from '@/services/pdfTemplateService';
+import { PdfTemplateService, renderTemplatePreview, DEFAULT_HTML_TEMPLATE } from '@/services/pdfTemplateService';
 import type { PdfTemplate as HtmlTemplate } from '@/services/pdfTemplateService';
-import { FileDown, FileText, Pencil, Copy, Loader2, Sparkles } from 'lucide-react';
+import { downloadHtmlFile, openHtmlPreview, wrapHtmlDocument } from '@/lib/html/htmlDocument';
+import { FileDown, Eye, Pencil, Copy, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { converterPropostaEmFactura, getFaturasPorProposta, atualizarStatusFatura } from '@/services/faturaService';
-import type { PDFTemplate, Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
-import TemplateSelectorModal from '@/components/pdf/TemplateSelectorModal';
+import type { Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
 
 export default function ResumoProposta() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [template, setTemplate] = useState<PDFTemplate>('classic');
   const [htmlTemplates, setHtmlTemplates] = useState<HtmlTemplate[]>([]);
   const [selectedHtmlTemplateId, setSelectedHtmlTemplateId] = useState<string | null>(null);
-  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [generatingHtml, setGeneratingHtml] = useState(false);
 
   const [proposta, setProposta] = useState<PropostaCompleta | null>(null);
   const [dono, setDono] = useState<DonoProposta | null>(null);
@@ -82,31 +80,38 @@ export default function ResumoProposta() {
     ? calcularTotal(proposta.subtotal, proposta.descontoTipo, proposta.descontoValor, proposta.ivaPercentual)
     : { desconto: 0, baseTributavel: 0, iva: 0, total: 0 };
 
-  const handlePDF = async () => {
+  /**
+   * Geração da proposta em HTML — único formato suportado.
+   * mode 'preview' abre numa nova janela (com botão Imprimir);
+   * mode 'download' descarrega o ficheiro .html.
+   * Template: DB (seleccionado) ou o incorporado por omissão.
+   */
+  const handleGerarHtml = (mode: 'preview' | 'download') => {
     if (!proposta || !dono || !cliente) {
       toast.error('Dados não carregados');
       return;
     }
 
-    // Se seleccionou um template HTML, usar o novo sistema
-    if (selectedHtmlTemplateId) {
-      setGeneratingPdf(true);
-      try {
-        const htmlTemplate = htmlTemplates.find(t => t.id === selectedHtmlTemplateId);
-        if (!htmlTemplate) throw new Error('Template não encontrado');
-        const rendered = renderTemplate(htmlTemplate.html, proposta, cliente, dono);
-        await renderHtmlToPdf(rendered, `Proposta-${proposta.numero}.pdf`);
-        toast.success('PDF gerado com template HTML');
-      } catch (err) {
-        toast.error('Erro ao gerar PDF: ' + (err instanceof Error ? err.message : ''));
-      } finally {
-        setGeneratingPdf(false);
-      }
-      return;
-    }
+    setGeneratingHtml(true);
+    try {
+      const selectedTemplate = htmlTemplates.find(t => t.id === selectedHtmlTemplateId);
+      const templateHtml = selectedTemplate?.html ?? DEFAULT_HTML_TEMPLATE;
 
-    // Caso contrário, usar o sistema .ts antigo
-    gerarPDF(proposta, cliente, dono, template);
+      // renderTemplatePreview preenche placeholders E sanitiza (DOMPurify)
+      const sanitized = renderTemplatePreview(templateHtml, proposta, cliente, dono);
+      const documentHtml = wrapHtmlDocument(sanitized, `Proposta-${proposta.numero}`);
+
+      if (mode === 'download') {
+        downloadHtmlFile(documentHtml, `Proposta-${proposta.numero}.html`);
+        toast.success('Proposta HTML gerada com sucesso');
+      } else {
+        openHtmlPreview(documentHtml);
+      }
+    } catch (err) {
+      toast.error('Erro ao gerar HTML: ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setGeneratingHtml(false);
+    }
   };
 
   const handleDuplicar = async () => {
@@ -224,26 +229,19 @@ export default function ResumoProposta() {
               📄 Converter em Factura
             </button>
           )}
-          <TemplateSelectorModal value={template} onChange={setTemplate}>
-            <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors">
-              <FileText className="h-4 w-4" />
-              {getAllTemplates().find(t => t.id === template)?.nome ?? 'Template'}
-            </button>
-          </TemplateSelectorModal>
-          {htmlTemplates.length > 0 && (
-            <select
-              value={selectedHtmlTemplateId || ''}
-              onChange={e => setSelectedHtmlTemplateId(e.target.value || null)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
-            >
-              <option value="">Templates .ts (padrão)</option>
-              {htmlTemplates.map(t => (
-                <option key={t.id} value={t.id}>
-                  HTML: {t.nome}{t.is_system ? ' (sistema)' : ''}
-                </option>
-              ))}
-            </select>
-          )}
+          <select
+            value={selectedHtmlTemplateId || ''}
+            onChange={e => setSelectedHtmlTemplateId(e.target.value || null)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
+            title="Template HTML da proposta"
+          >
+            <option value="">Padrão (incorporado)</option>
+            {htmlTemplates.map(t => (
+              <option key={t.id} value={t.id}>
+                {t.nome}{t.is_system ? ' (sistema)' : ''}
+              </option>
+            ))}
+          </select>
           <button
             onClick={() => navigate(`/proposta/${proposta.id}/gerar-ia`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold transition-all"
@@ -252,12 +250,21 @@ export default function ResumoProposta() {
             Proposta IA
           </button>
           <button
-            onClick={handlePDF}
-            disabled={generatingPdf}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition-all disabled:opacity-50"
+            onClick={() => handleGerarHtml('preview')}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors"
+            title="Abrir a proposta HTML numa nova janela"
           >
-            {generatingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            {generatingPdf ? 'A gerar...' : 'PDF'}
+            <Eye className="h-4 w-4" />
+            Pré-visualizar
+          </button>
+          <button
+            onClick={() => handleGerarHtml('download')}
+            disabled={generatingHtml}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition-all disabled:opacity-50"
+            title="Descarregar a proposta como ficheiro HTML"
+          >
+            {generatingHtml ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            {generatingHtml ? 'A gerar...' : 'Baixar HTML'}
           </button>
           <button
             onClick={() => navigate(`/proposta/editar/${proposta.id}`)}

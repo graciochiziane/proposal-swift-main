@@ -37,8 +37,6 @@ export interface Proposta {
   created_at: string;
 }
 
-export type PDFTemplate = 'classic' | 'modern' | 'executive' | 'sleek' | 'sidebar' | 'business';
-
 export interface DadosBancarios {
   ativo: boolean;
   banco: string;
@@ -70,7 +68,7 @@ export interface DonoProposta {
   dadosBancarios: DadosBancarios;
   mobileMoney: MobileMoney;
   // Opcionais — usados pelos placeholders {{empresa.email}}/{{empresa.telefone}}
-  // dos templates PDF (ver pdfTemplateService.renderTemplate)
+  // dos templates HTML (ver pdfTemplateService.renderTemplate)
   email?: string;
   telefone?: string;
 }

@@ -131,7 +131,7 @@ export default function Configuracoes() {
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Configurações</h1>
-        <p className="text-muted-foreground mt-1">Dados do emissor e personalização do PDF</p>
+        <p className="text-muted-foreground mt-1">Dados do emissor e personalização da proposta</p>
       </div>
 
       {/* Identity */}
@@ -214,7 +214,7 @@ export default function Configuracoes() {
 
         {/* Primary color */}
         <div>
-          <label className={labelClass}>Cor Primária do PDF</label>
+          <label className={labelClass}>Cor Primária da Proposta</label>
           <div className="flex items-center gap-3">
             <input
               type="color"

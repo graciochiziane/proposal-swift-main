@@ -50,7 +50,7 @@ export interface PropostaResumo {
   created_at: string;
 }
 
-/** Proposta completa com items (Resumo, Edição, PDF) */
+/** Proposta completa com items (Resumo, Edição, geração HTML) */
 export interface PropostaCompleta extends Proposta {
   // Já herda tudo do tipo global, incluindo itens e snapshots
 }

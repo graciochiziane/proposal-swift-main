@@ -192,7 +192,7 @@ export default function TemplateManager() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Templates PDF</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Templates de Proposta (HTML)</h1>
           <p className="text-sm text-muted-foreground">
             Importe templates HTML criados externamente (VS Code, CodePen, etc.)
           </p>

@@ -1,7 +1,10 @@
 // ============================================================
-// Advanced Proposal PDF Renderer
+// Advanced Proposal HTML Renderer
 // Gera HTML completo com estilos print-ready
 // 4 templates: corporate, premium, minimal, technical
+//
+// HTML é o único formato de geração: o documento é
+// autónomo e o PDF obtém-se via Imprimir do browser.
 // ============================================================
 
 import type { ProposalDocument, DocSection } from './documentModel';
@@ -269,7 +272,7 @@ export function renderProposalHtml(doc: ProposalDocument): string {
   </style>
 </head>
 <body>
-  <button class="print-btn no-print" onclick="window.print()">Exportar PDF</button>
+  <button class="print-btn no-print" onclick="window.print()">Imprimir / Guardar PDF</button>
 
   <div class="document">
     ${coverHtml}
@@ -393,16 +396,17 @@ function escapeHtml(text: string): string {
 function adjustColor(hex: string, amount: number): string {
   const color = hex.replace('#', '');
   const num = parseInt(color, 16);
-  let r = Math.min(255, Math.max(0, (num >> 16) + amount));
-  let g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
-  let b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+  const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+  const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+  const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
   return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
 /**
- * Opens the rendered HTML in a new window for printing to PDF.
+ * Opens the rendered HTML in a new window
+ * (preview + botão Imprimir embutido no documento).
  */
-export function openPdfPreview(doc: ProposalDocument): void {
+export function openHtmlPreview(doc: ProposalDocument): void {
   const html = renderProposalHtml(doc);
   const blob = new Blob([html], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
@@ -411,9 +415,17 @@ export function openPdfPreview(doc: ProposalDocument): void {
 }
 
 /**
- * Returns the HTML as a Blob for download.
+ * Downloads the rendered proposal as a standalone .html file.
  */
-export function getProposalHtmlBlob(doc: ProposalDocument): Blob {
+export function downloadProposalHtml(doc: ProposalDocument): void {
   const html = renderProposalHtml(doc);
-  return new Blob([html], { type: 'text/html' });
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Proposta-${doc.metadata.title.replace(/[\\/:*?"<>|]/g, '').trim() || 'documento'}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

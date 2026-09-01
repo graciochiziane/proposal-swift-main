@@ -202,7 +202,7 @@ export function markdownToHtml(md: string): string {
   // Markdown syntax chars are preserved; only HTML special chars are escaped.
   // This means <script>alert(1)</script> in AI output becomes
   // &lt;script&gt;alert(1)&lt;/script&gt; which renders as text, not as HTML.
-  let html = convertTables(escapeHtml(md));
+  const html = convertTables(escapeHtml(md));
   const lines = html.split('\n');
   const result: string[] = [];
   let inUl = false;
@@ -250,7 +250,7 @@ function processInline(text: string): string {
   text = text.replace(/(?<!\*)\*(?!=)(.+?)(?<!\*)\*(?!=)/g, '<em>$1</em>');
   text = text.replace(/`(.+?)`/g, '<code>$1</code>');
   text = text.replace(/\[INFORMACAO EM FALTA\]/g,
-    '<span class=\"missing-info\">[INFORMACAO EM FALTA]</span>');
+    '<span class="missing-info">[INFORMACAO EM FALTA]</span>');
   return text;
 }
 

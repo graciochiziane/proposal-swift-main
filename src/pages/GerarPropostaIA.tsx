@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
-import { gerarPDFNarrativa } from '@/lib/pdf';
+import { gerarHtmlNarrativa } from '@/lib/html/narrativaHtml';
+import { downloadHtmlFile } from '@/lib/html/htmlDocument';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -219,24 +220,27 @@ export default function GerarPropostaIA() {
   };
 
   // ---- Export (Doc A = proposta narrativa, Doc B = cotacao) ----
+  // Geração exclusivamente em HTML: o ficheiro .html é autónomo
+  // (PDF via Imprimir do browser a partir do documento HTML).
   const [isExporting, setIsExporting] = useState(false);
 
   const handleExportProposta = async () => {
     if (!proposta || !dono || !seccoes) return;
     setIsExporting(true);
     try {
-      await gerarPDFNarrativa(proposta, dono, seccoes, 'sleek', includedSections);
+      const html = gerarHtmlNarrativa(proposta, dono, seccoes, includedSections);
+      downloadHtmlFile(html, `Proposta-${proposta.numero}.html`);
       if (propostaAiId) {
         try {
           await propostaAiService.markExported(propostaAiId);
         } catch {
-          console.warn('Falha ao marcar proposta como exportada (PDF gerado com sucesso)');
+          console.warn('Falha ao marcar proposta como exportada (HTML gerado com sucesso)');
         }
       }
-      toast.success('Proposta comercial exportada (PDF)');
+      toast.success('Proposta comercial exportada (HTML)');
     } catch (err) {
-      console.error('Erro ao exportar PDF narrativo:', err);
-      toast.error('Erro ao gerar PDF da proposta');
+      console.error('Erro ao exportar HTML narrativo:', err);
+      toast.error('Erro ao gerar HTML da proposta');
     } finally {
       setIsExporting(false);
     }
@@ -244,7 +248,7 @@ export default function GerarPropostaIA() {
 
   const handleExportCotacao = () => {
     if (!proposta || !dono) return;
-    toast.info('A abrir cotacao para exportar PDF...');
+    toast.info('A abrir cotacao para gerar HTML...');
     navigate(`/proposta/${id}`);
   };
 
@@ -527,7 +531,7 @@ export default function GerarPropostaIA() {
                 className="gap-1.5"
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" />
-                Cotacao (PDF)
+                Cotacao (HTML)
               </Button>
               <Button
                 size="sm"
@@ -540,7 +544,7 @@ export default function GerarPropostaIA() {
                 ) : (
                   <Download className="h-3.5 w-3.5" />
                 )}
-                Proposta (PDF)
+                Proposta (HTML)
               </Button>
             </Fragment>
           )}

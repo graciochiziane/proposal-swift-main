@@ -8,6 +8,7 @@ import {
 import type {
   AdvancedProposal,
   ProposalSectionAnswer,
+  ProposalSection,
   BlueprintWithSections,
   CompanyBrandProfile,
 } from '@/types/advancedProposal';
@@ -23,8 +24,8 @@ import {
 import { generateSectionContent, generateAllSections } from '@/services/propostaAiSectionService';
 import {
   buildProposalDocument,
-  openPdfPreview,
-  exportProposalPdf,
+  openHtmlPreview,
+  downloadProposalHtml,
 } from '@/lib/advanced';
 import { useAuth } from '@/hooks/useAuth';
 import { ProfileService } from '@/services/profileService';
@@ -53,8 +54,8 @@ export default function RevisaoProposta() {
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
 
-  // PDF export state
-  const [exportingPdf, setExportingPdf] = useState(false);
+  // HTML export state
+  const [exportingHtml, setExportingHtml] = useState(false);
 
   // Load all data
   useEffect(() => {
@@ -168,7 +169,7 @@ export default function RevisaoProposta() {
   };
 
   // Generate SINGLE section
-  const handleGenerateSingle = async (sectionDef: any) => {
+  const handleGenerateSingle = async (sectionDef: ProposalSection) => {
     if (!proposal || !blueprint) return;
     const answer = answers.find(a => a.section_id === sectionDef.id);
     if (!answer) { toast.error('Respostas nao encontradas para esta seccao'); return; }
@@ -265,6 +266,7 @@ export default function RevisaoProposta() {
   };
 
   // Build document and open preview
+  // (HTML numa nova janela, com botão Imprimir embutido)
   const handlePreview = () => {
     if (!proposal || !blueprint) return;
     const doc = buildProposalDocument({
@@ -276,13 +278,13 @@ export default function RevisaoProposta() {
       companyInfo: getCompanyInfo(),
       clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
     });
-    openPdfPreview(doc);
+    openHtmlPreview(doc);
   };
 
-  // Export as native PDF file
-  const handleExportPdf = async () => {
+  // Export as standalone HTML file
+  const handleExportHtml = async () => {
     if (!proposal || !blueprint) return;
-    setExportingPdf(true);
+    setExportingHtml(true);
     try {
       const doc = buildProposalDocument({
         proposalId: proposal.id,
@@ -293,15 +295,15 @@ export default function RevisaoProposta() {
         companyInfo: getCompanyInfo(),
         clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
       });
-      await exportProposalPdf(doc);
-      toast.success('PDF exportado com sucesso!');
+      downloadProposalHtml(doc);
       // Update proposal status to 'exportada'
       await updateAdvancedProposalStatus(proposal.id, 'exportada');
+      toast.success('Proposta exportada em HTML! Para PDF, abrir o ficheiro e Imprimir.');
     } catch (err) {
-      console.error('PDF export error:', err);
-      toast.error('Erro ao gerar PDF. Tente usar Pre-visualizar > Imprimir.');
+      console.error('HTML export error:', err);
+      toast.error('Erro ao gerar HTML. Tente usar Pre-visualizar > Imprimir.');
     } finally {
-      setExportingPdf(false);
+      setExportingHtml(false);
     }
   };
 
@@ -368,10 +370,10 @@ export default function RevisaoProposta() {
             <Eye className="h-4 w-4" />
             Pre-visualizar
           </button>
-          <button onClick={handleExportPdf} disabled={generating || exportingPdf}
+          <button onClick={handleExportHtml} disabled={generating || exportingHtml}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm disabled:opacity-50">
-            {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            {exportingPdf ? 'A gerar PDF...' : 'Exportar PDF'}
+            {exportingHtml ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {exportingHtml ? 'A gerar HTML...' : 'Exportar HTML'}
           </button>
           <button onClick={handleMarkReviewed} disabled={generating}
             className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-sm disabled:opacity-50">
