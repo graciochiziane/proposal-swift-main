@@ -13,7 +13,7 @@
 |---|---|
 | Versão do documento | 1.0 |
 | Data de criação | 2026-08-13 |
-| Última actualização | 2026-08-13 |
+| Última actualização | 2026-09-01 |
 | Branch actual | `feature/multi-user-hierarchy` |
 | HEAD commit | `73af970` |
 | Total de commits | 118 |
@@ -103,8 +103,8 @@ proposal-swift-main/
 │   ├── hooks/                    # useAuth, useOrganization, useActivityTracker, use-mobile, use-toast
 │   ├── pages/                    # 13 top-level + admin/(4 tabs + 4 hooks) + advanced/(4 pages)
 │   ├── services/                 # 14 services
-│   ├── components/               # AppLayout, ProtectedRoute, org/, pdf/, ui/(42+)
-│   └── lib/                      # utils, calculos, posthog, pdf/, advanced/, __tests__/
+│   ├── components/               # AppLayout, ProtectedRoute, org/, ui/(42+)
+│   └── lib/                      # utils, calculos, posthog, html/, advanced/, __tests__/
 ├── supabase/
 │   ├── config.toml
 │   ├── migrations/               # 31 SQL files
@@ -176,12 +176,14 @@ proposal-swift-main/
 | `send-invite-email` | ❌ **NONE** | `*` ❌ | ❌ | ✅ |
 | `admin-create-tenant` | ✅ JWT + admin | (sem CORS) | ❌ | ❌ |
 
-### 3.6 Motor PDF
+### 3.6 Motor de Geração de Propostas (HTML-only)
 
-- **Subsistema A (simples):** jsPDF nativo, 7 templates (classic, modern, executive, sleek, sidebar, business, narrativa)
-- **Subsistema B (avançado):** HTML → html2canvas → JPEG → jsPDF (image-based, não acessível)
-- **`gerarPDF()` retorna `void`** (não Blob) — impossibilita upload/email
-- **Footer apenas na última página** (6/7 templates; só `narrativa` itera `getNumberOfPages()`)
+- **Único formato: HTML autónomo** (decisão 2026-09-01) — jsPDF/html2canvas/jspdf-autotable removidos do código e das dependências
+- **Cotações (Doc B):** templates HTML da tabela `pdf_templates` (placeholders `{{}}`) + `DEFAULT_HTML_TEMPLATE` incorporado como fallback → `renderTemplate` → DOMPurify → `wrapHtmlDocument` (A4 print-ready + botão Imprimir)
+- **Proposta narrativa IA (Doc A):** `lib/html/narrativaHtml.ts` — secções IA (markdown seguro P0-C5) → HTML com marca (cor primária/logotipo)
+- **Propostas avançadas:** `lib/advanced/advancedPdfRenderer.ts` (4 estilos visuais) → `openHtmlPreview`/`downloadProposalHtml`
+- **PDF:** via Imprimir > Guardar como PDF do browser (caminho nativo, sem libs; texto seleccionável/acedível por natureza)
+- **Nome `pdf_templates`/`PdfTemplateService` mantido** por compatibilidade com a DB — o output é HTML
 
 ### 3.7 Blueprint Engine (Propostas Avançadas)
 
@@ -206,6 +208,73 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 ## 4. Histórico de Mudanças
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
+
+### [2026-09-01] — Geração de propostas exclusivamente via HTML (jsPDF/html2canvas removidos)
+
+**Tipo:** refactor arquitectural — decisão de produto (2 commits)
+**Branch:** `feature/multi-user-hierarchy`
+**Commits:** `04044c4` (código) + entrada CHANGELOG
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+Directriz do utilizador: **manter somente a geração de proposta via HTML** e garantir o sistema devidamente preparado. Eliminados os 3 pipelines de PDF client-side; o HTML autónomo é agora o único formato de saída. O PDF (quando necessário) obtém-se via **Imprimir → Guardar como PDF** do browser — caminho nativo, texto seleccionável, zero dependências.
+
+**Removido (−3.241 linhas, 14 ficheiros):**
+
+1. **`src/lib/pdf/`** (directório completo, 12 ficheiros ~2.5k linhas) — subsistema A: templates jsPDF nativos (classic, modern, executive, sleek, sidebar, business), `narrativa.ts` (Doc A em jsPDF), registry, themes, shared, sidebar, types
+2. **`src/lib/advanced/pdfExport.ts`** — subsistema B: HTML → html2canvas → JPEG → jsPDF (image-based, não acessível)
+3. **`src/components/pdf/TemplateSelectorModal.tsx`** — modal de selecção dos templates .ts (com thumbnails CSS)
+4. **`renderHtmlToPdf()`** do `pdfTemplateService.ts` — conversão html2canvas → jsPDF dos templates da DB
+5. **Deps:** `jspdf`, `jspdf-autotable`, `html2canvas` desinstalados (npm uninstall — package.json actualizado; lockfile permanece não-trackado por convenção do commit 699f656)
+6. **Tipo `PDFTemplate`** (`types/index.ts`) — só servia o subsistema removido
+
+**Adicionado (+430 linhas, 2 ficheiros):**
+
+1. **`src/lib/html/htmlDocument.ts`** — utilitários do documento final: `wrapHtmlDocument` (envolve fragmento do template num documento completo: meta charset, folha A4 no ecrã, `@page A4`, `@media print` com `print-color-adjust: exact`, botão "Imprimir / Guardar PDF" com classe `ps-no-print`), `downloadHtmlFile` (Blob + `<a download>`, nome sanitizado, `.html` garantido), `openHtmlPreview` (nova janela), `sanitizeFileName`. Documentos completos (com `<html>`) passam tal qual — respeita o autor do template
+2. **`src/lib/html/narrativaHtml.ts`** — Doc A (proposta narrativa IA) em HTML: `seccoesToNarrative` (movida de narrativa.ts, mesma ordem canónica + toggles), `gerarHtmlNarrativa` (cabeçalho com marca corPrimária/logotipo, bloco Emitente/Cliente, secções com `markdownToHtml` do documentModel — **escape XSS P0-C5 reutilizado**, markers `TABELA_CRONOGRAMA_*` convertidos em tabela markdown, rodapé), tudo envolvido por `wrapHtmlDocument`
+3. **`DEFAULT_HTML_TEMPLATE`** (pdfTemplateService) — template incorporado que garante geração funcional **mesmo com a tabela `pdf_templates` vazia** (fallback "Padrão (incorporado)" no select do ResumoProposta)
+4. **Motor `renderTemplate`: blocos condicionais `{{#campo}}...{{/campo}}`** — bloco omitido quando o valor está vazio (evita caixas vazias no DEFAULT_TEMPLATE para `{{#observacoes}}`)
+5. **`openHtmlPreview`/`downloadProposalHtml`** no pipeline avançado (renomeio de `openPdfPreview`; `exportProposalPdf` eliminado; `downloadProposalHtml` é o `getProposalHtmlBlob` tornado acção de download — voltou a ter uso)
+
+**UI (4 páginas):**
+
+- **ResumoProposta (Doc B):** select único de template (Padrão incorporado + templates da DB, sempre visível — antes o select HTML só aparecia se a DB tivesse templates e coexistia com o modal .ts) + botões **Pré-visualizar** (nova janela) e **Baixar HTML** (ficheiro). Fluxo: `renderTemplatePreview` (placeholders + DOMPurify) → `wrapHtmlDocument` → preview/download
+- **GerarPropostaIA:** "Proposta (HTML)" descarrega o Doc A narrativo; "Cotação (HTML)" navega para o Resumo (Doc B); `markExported` preservado
+- **RevisaoProposta (avançadas):** "Exportar HTML" substitui "Exportar PDF" (status `exportada` continua a ser marcado); Pré-visualizar usa `openHtmlPreview`
+- **Rótulos:** "Templates PDF" → "Templates de Proposta (HTML)"; "Cor Primária do PDF" → "da Proposta"; botão do documento HTML final: "Imprimir / Guardar PDF"
+
+**Compatibilidade intencionalmente mantida:**
+
+- Tabela DB **`pdf_templates`** e nome **`PdfTemplateService`/`advancedPdfRenderer.ts`** inalterados (evitar migration churn) — comentários no código documentam que o output é HTML
+- Placeholders `{{}}`/`{{{items}}}` idênticos; TemplateManager (CRUD + preview com CodeMirror) inalterado funcionalmente
+- `window.print()` do botão embutido é browser-nativo, não jsPDF
+
+#### Breaking Changes
+
+- **Ficheiros `.pdf` deixam de ser gerados pela aplicação** (comportamento pretendido pelo utilizador). Quem precisa de PDF: abrir o `.html` → Imprimir → Guardar como PDF
+- `gerarPDF`, `gerarPDFNarrativa`, `renderHtmlToPdf`, `exportProposalPdf`, `openPdfPreview`, `getAllTemplates`, `PDFTemplate`, `TemplateSelectorModal` — APIs removidas (nenhum caller restante — verificado por grep)
+
+#### Validação
+
+- `tsc --noEmit`: **0 erros**
+- `eslint` (9 ficheiros/dirs tocados): **0 problemas** — 7 pre-existing dos ficheiros tocados corrigidos de passagem (3× prefer-const em `adjustColor`, 1× prefer-const `html` + 2× escape inútil em `documentModel.processInline`, 1× `any` → `ProposalSection` em `RevisaoProposta.handleGenerateSingle`)
+- `vitest`: 5/5 pass
+- `vite build`: ok (11.2s) — **bundle sem jspdf/html2canvas** (verificação: `rg -c "jspdf|html2canvas|jsPDF|autoTable" dist/assets/*.js` = zero matches); `pdfTemplateService` chunk 36.79 kB
+- Zero referências órfãs: `rg "jspdf|html2canvas|@/lib/pdf|gerarPDF|renderHtmlToPdf|exportProposalPdf|openPdfPreview|PDFTemplate|TemplateSelectorModal" src/` = apenas comentários históricos
+
+#### Rollback
+
+- `git revert 04044c4` (reinstalar deps: `npm i jspdf jspdf-autotable html2canvas`)
+
+#### Notas de Segurança
+
+- Superfície XSS reduzida: saída de templates passa sempre por `DOMPurify.sanitize` (allow-list default) ANTES do `wrapHtmlDocument`; conteúdo IA passa pelo escape P0-C5 do `documentModel` (única via de render)
+- Botão de impressão injectado pelo wrapper usa apenas `onclick="window.print()"` — sem interpolação de conteúdo do utilizador
+- `downloadHtmlFile`: nome sanitizado (`/\\:*?"<>|` removidos) — previne path traversal no download
+- Sem alterações de RLS/auth/DB
+
+---
 
 ### [2026-08-31] — 63 erros TS restantes eliminados: tsc chega a 0
 
