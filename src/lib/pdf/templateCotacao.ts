@@ -51,7 +51,7 @@ export function desenharCotacao(dados: DadosPropostaPdf): MotorPdf {
   motor.aoIniciarPagina = m => cabecalhoContinuacao(m, dados, p);
 
   desenharCabecalho(motor, dados, p);
-  desenharBlocoInfo(motor, dados, p);
+  desenharBlocoInfo(motor, dados);
 
   if (dados.mostrarFinanceiro) {
     tabelaItens(motor, dados, p);
@@ -173,7 +173,7 @@ function linhasTituloBanda(motor: MotorPdf, titulo: string, larguraUtil: number)
 // BLOCO DE INFORMAÇÃO — cliente (esq.) / proposta+pagamento (dir.)
 // ============================================================
 
-function desenharBlocoInfo(motor: MotorPdf, dados: DadosPropostaPdf, p: Paleta): void {
+function desenharBlocoInfo(motor: MotorPdf, dados: DadosPropostaPdf): void {
   const y0 = motor.y;
   const xDir = 113;
   const larguraDir = motor.medidas.larguraPagina - motor.medidas.margens.dir - xDir;

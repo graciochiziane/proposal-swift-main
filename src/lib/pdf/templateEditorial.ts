@@ -48,12 +48,12 @@ export function desenharEditorial(dados: DadosPropostaPdf): MotorPdf {
 
   desenharCapa(motor, dados, p);
 
-  motor.aoIniciarPagina = (m) => fundoPaginaConteudo(m, dados, p);
+  motor.aoIniciarPagina = (m) => fundoPaginaConteudo(m, dados);
   motor.novaPagina();
 
   desenharConteudo(motor, dados, p);
 
-  motor.aplicarRodapes((m, i, total) => rodape(m, dados, i, total));
+  motor.aplicarRodapes((m, i) => rodape(m, dados, i));
   return motor;
 }
 
@@ -168,7 +168,7 @@ function desenharCapa(motor: MotorPdf, dados: DadosPropostaPdf, p: Paleta): void
 // CONTEÚDO
 // ============================================================
 
-function fundoPaginaConteudo(motor: MotorPdf, dados: DadosPropostaPdf, p: Paleta): void {
+function fundoPaginaConteudo(motor: MotorPdf, dados: DadosPropostaPdf): void {
   fundoMarfim(motor);
   const cx = motor.medidas.larguraPagina / 2;
   motor.textoAbs(`PROPOSTA ${dados.numero}`, cx, 15, { fonte: 'times', peso: 'normal', tamanho: 8 }, COR_CINZA, { alinhamento: 'center', espacamentoLetras: 2.4 });
@@ -343,7 +343,7 @@ function desenharAssinaturas(motor: MotorPdf, dados: DadosPropostaPdf, _p: Palet
 // RODAPÉ
 // ============================================================
 
-function rodape(motor: MotorPdf, dados: DadosPropostaPdf, i: number, total: number): void {
+function rodape(motor: MotorPdf, dados: DadosPropostaPdf, i: number): void {
   const cx = motor.medidas.larguraPagina / 2;
   if (i === 1) return; // capa não tem rodapé paginado
   motor.textoAbs(`—  ${i}  —`, cx, 285, { fonte: 'times', peso: 'normal', tamanho: 8.5 }, COR_CINZA, { alinhamento: 'center' });

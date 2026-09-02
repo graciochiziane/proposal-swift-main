@@ -14,7 +14,7 @@
 // ============================================================
 
 import { jsPDF } from 'jspdf';
-import type { Bloco, Segmento } from './markdown';
+import type { Segmento } from './markdown';
 import { parseMarkdown } from './markdown';
 import { limparTextoPdf } from './utils';
 
