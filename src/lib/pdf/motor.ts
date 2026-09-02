@@ -157,6 +157,19 @@ export class MotorPdf {
   }
 
   /**
+   * Largura real do espaço — NÃO passa por limparTextoPdf (cujo
+   * trim() devolve '' para a string ' '), o que anulava o espaçamento
+   * entre palavras no paragrafo(). (Regressão das palavras coladas.)
+   */
+  medirEspaco(estilo: Estilo): number {
+    this.aplicar(
+      { fonte: estilo.fonte, peso: 'normal', tamanho: estilo.tamanho },
+      [0, 0, 0],
+    );
+    return this.doc.getTextWidth(' ');
+  }
+
+  /**
    * Desenha uma string simples numa posição absoluta (mm).
    * Não move o cursor.
    *
@@ -263,7 +276,7 @@ export class MotorPdf {
       peso: p.negrito ? (p.italico ? 'bolditalic' : 'bold') : (p.italico ? 'italic' : 'normal'),
     });
 
-    const larguraEspaco = this.medirLargura(' ', estiloBase);
+    const larguraEspaco = this.medirEspaco(estiloBase);
 
     // linhas por fluxo
     const linhas: Palavra[][] = [];

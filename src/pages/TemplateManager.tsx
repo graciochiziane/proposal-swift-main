@@ -1,7 +1,7 @@
 // ============================================================
 // Modelos de Proposta PDF (galeria)
 //
-// Mostra os 2 templates modernos incorporados (Executivo e
+// Mostra os 3 templates incorporados (Cotação, Executivo e
 // Editorial) com miniaturas CSS, características e escolha do
 // modelo por omissão (localStorage). Os modelos são gerados em
 // código (PDF vectorial) — já não há templates HTML em base de
@@ -128,6 +128,67 @@ function MiniaturaEditorial({ cor }: { cor: string }): JSX.Element {
   );
 }
 
+/** Miniatura CSS do modelo Cotação (réplica do layout de referência) */
+function MiniaturaCotacao({ cor }: { cor: string }): JSX.Element {
+  return (
+    <div className="w-full aspect-[210/297] rounded-md overflow-hidden bg-white border border-border shadow-sm relative">
+      {/* cabeçalho: marca à esquerda + banda de título à direita */}
+      <div className="px-[7%] pt-[6%] flex items-start justify-between gap-[6%]">
+        <div className="pt-1">
+          <div className="w-3.5 h-3.5 rounded-[3px]" style={{ background: cor }} />
+          <div className="h-1.5 w-10 bg-slate-700 rounded-sm mt-1.5" />
+          <div className="h-1 w-8 bg-slate-300 rounded-sm mt-1" />
+        </div>
+        <div className="w-[52%] h-8 rounded-md flex items-center justify-center" style={{ background: cor }}>
+          <div className="h-1.5 w-12 bg-white/90 rounded-sm" />
+        </div>
+      </div>
+      {/* bloco de informação a duas colunas */}
+      <div className="px-[7%] pt-[5%] flex gap-[8%]">
+        <div className="flex-1 space-y-1">
+          <div className="h-1 w-6 bg-slate-500 rounded-sm" />
+          <div className="h-1.5 w-10 bg-slate-700 rounded-sm" />
+          <div className="h-1 w-9 bg-slate-300 rounded-sm" />
+          <div className="h-1 w-7 bg-slate-300 rounded-sm" />
+        </div>
+        <div className="flex-1 space-y-1">
+          <div className="h-1 w-8 bg-slate-500 rounded-sm" />
+          <div className="h-1.5 w-9 bg-slate-700 rounded-sm" />
+          <div className="h-1 w-6 bg-slate-300 rounded-sm" />
+          <div className="h-1 w-7 bg-slate-300 rounded-sm" />
+        </div>
+      </div>
+      {/* tabela com cabeçalho colorido */}
+      <div className="px-[7%] pt-[5%]">
+        <div className="h-3.5 rounded-sm" style={{ background: cor }} />
+        <div className="h-3 bg-white border-b border-slate-200" />
+        <div className="h-3 bg-white border-b border-slate-200" />
+        <div className="h-3 bg-white border-b border-slate-200" />
+        <div className="h-3 bg-white border-b border-slate-200" />
+      </div>
+      {/* termos (esq.) + totais (dir.) */}
+      <div className="px-[7%] pt-[5%] flex gap-[10%]">
+        <div className="flex-1 space-y-1">
+          <div className="h-1.5 w-10 bg-slate-500 rounded-sm" />
+          <div className="h-1 w-full bg-slate-200 rounded-sm" />
+          <div className="h-1 w-5/6 bg-slate-200 rounded-sm" />
+        </div>
+        <div className="w-[34%] space-y-1 flex flex-col items-end">
+          <div className="h-1 w-full bg-slate-200 rounded-sm" />
+          <div className="h-1 w-4/5 bg-slate-200 rounded-sm" />
+          <div className="h-px w-full" style={{ background: cor }} />
+          <div className="h-2.5 w-full rounded-sm" style={{ background: cor }} />
+        </div>
+      </div>
+      {/* banda de rodapé full-bleed */}
+      <div className="absolute bottom-0 left-0 right-0 h-[7%] flex items-center justify-between px-[7%]" style={{ background: cor }}>
+        <div className="h-1 w-8 bg-white/90 rounded-sm" />
+        <div className="h-1 w-6 bg-white/90 rounded-sm" />
+      </div>
+    </div>
+  );
+}
+
 export default function TemplateManager() {
   const [templateDefault, setTemplateDefault] = useState<PdfTemplateId>(obterTemplateDefault());
 
@@ -148,9 +209,9 @@ export default function TemplateManager() {
         </p>
       </div>
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {TEMPLATES_PDF.map(template => {
-          const cor = template.id === 'editorial' ? '#8A6D3B' : '#1F4E79';
+          const cor = template.id === 'editorial' ? '#8A6D3B' : template.id === 'cotacao' ? '#F97316' : '#1F4E79';
           const activo = templateDefault === template.id;
           return (
             <Card
@@ -161,7 +222,9 @@ export default function TemplateManager() {
                 <div className="mx-auto w-44">
                   {template.id === 'editorial'
                     ? <MiniaturaEditorial cor={cor} />
-                    : <MiniaturaExecutivo cor={cor} />}
+                    : template.id === 'cotacao'
+                      ? <MiniaturaCotacao cor={cor} />
+                      : <MiniaturaExecutivo cor={cor} />}
                 </div>
 
                 <div className="space-y-2">

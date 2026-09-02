@@ -25,7 +25,7 @@ import { generateSectionContent, generateAllSections } from '@/services/proposta
 import {
   buildProposalDocument,
 } from '@/lib/advanced';
-import { converterDocumentoAvancado, previsualizarPdf, baixarPropostaPdf, obterTemplateDefault } from '@/lib/pdf';
+import { converterDocumentoAvancado, previsualizarPdf, baixarPropostaPdf, obterTemplateNarrativa } from '@/lib/pdf';
 import { useAuth } from '@/hooks/useAuth';
 import { ProfileService } from '@/services/profileService';
 import { ClienteService } from '@/services/clienteService';
@@ -278,7 +278,7 @@ export default function RevisaoProposta() {
       clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
     });
     try {
-      previsualizarPdf(converterDocumentoAvancado(doc), obterTemplateDefault());
+      previsualizarPdf(converterDocumentoAvancado(doc), obterTemplateNarrativa());
     } catch (err) {
       console.error('PDF preview error:', err);
       toast.error('Erro ao gerar a pré-visualização do PDF.');
@@ -299,7 +299,7 @@ export default function RevisaoProposta() {
         companyInfo: getCompanyInfo(),
         clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
       });
-      baixarPropostaPdf(converterDocumentoAvancado(doc), obterTemplateDefault());
+      baixarPropostaPdf(converterDocumentoAvancado(doc), obterTemplateNarrativa());
       // Update proposal status to 'exportada'
       await updateAdvancedProposalStatus(proposal.id, 'exportada');
       toast.success('Proposta exportada em PDF, pronta a enviar ao cliente!');

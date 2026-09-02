@@ -93,6 +93,12 @@ const SUBSTITUICOES: Record<string, string> = {
   '→': '->', '←': '<-', '⇒': '=>', '∞': 'infinito',
   '€': 'EUR', '£': 'GBP', '•': '•',
   '\u00A0': ' ', // nbsp
+  // separadores invisíveis (zero-width e espaços unicode): sem estes
+  // mapeamentos o whitelist WinAnsi remove-os e as palavras colam-se
+  '\u200B': ' ', '\u200C': ' ', '\u200D': ' ', '\u2060': ' ', '\uFEFF': ' ',
+  '\u2000': ' ', '\u2001': ' ', '\u2002': ' ', '\u2003': ' ', '\u2004': ' ',
+  '\u2005': ' ', '\u2006': ' ', '\u2007': ' ', '\u2008': ' ', '\u2009': ' ',
+  '\u200A': ' ', '\u202F': ' ', '\u205F': ' ', '\u00AD': '',
   '\u2011': '-', '\u2012': '-', '\u2013': '–', '\u2015': '—',
   '\u2026': '…',
   '\u2018': '‘', '\u2019': '’', '\u201C': '“', '\u201D': '”',

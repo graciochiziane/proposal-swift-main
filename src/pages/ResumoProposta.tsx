@@ -4,7 +4,7 @@ import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { calcularTotal } from '@/lib/calculos';
-import { TEMPLATES_PDF, obterTemplateDefault, previsualizarPdf, baixarPropostaPdf, construirDadosPdf } from '@/lib/pdf';
+import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf } from '@/lib/pdf';
 import type { PdfTemplateId } from '@/lib/pdf';
 import { propostaEmailService } from '@/services/propostaEmailService';
 import { FileDown, Eye, Pencil, Copy, Loader2, Sparkles, Send } from 'lucide-react';
@@ -15,7 +15,9 @@ import type { Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
 export default function ResumoProposta() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [templateId, setTemplateId] = useState<PdfTemplateId>(obterTemplateDefault());
+  // cotação abre por omissão no layout de referência (factura moderna);
+  // o selector continua a permitir trocar para Executivo/Editorial
+  const [templateId, setTemplateId] = useState<PdfTemplateId>('cotacao');
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // estado do modal de envio por email

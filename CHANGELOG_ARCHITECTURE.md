@@ -212,6 +212,32 @@ section_questions (16) → proposal_section_answers (21) ← advanced_proposals 
 
 > Formato: mais recente primeiro. Cada entrada segue o template da secção 8.
 
+### [2026-09-02] — Fix do bug das palavras coladas + template "Cotação Minimalista" (layout de referência do cliente)
+
+**Tipo:** bugfix crítico (motor PDF) + feature de design (novo template)
+**Branch:** `feature/multi-user-hierarchy`
+**Autor:** Agente IA (Master Prompt protocol)
+
+#### Sumário
+
+**1. Bug crítico corrigido — palavras coladas (sem espaçamento) em todos os PDFs.** Investigação forense (leitura estática + réplica empírica + parser dos operadores `Tj/Td/Tc` do PDF real) comprovou a causa raiz: `MotorPdf.paragrafo()` media a largura do espaço através de `limparTextoPdf(' ')`, cujo `trim()` final devolve `''` → `getTextWidth('')` = **0,00 mm** (o espaço real mede 0,99 mm). Como o parágrafo desenha palavra-a-palavra com `px += largura + gap`, **49% (Executivo) e 63% (Editorial) dos pares de palavras saíam com gap 0,00pt** — exactamente o sintoma "AMocambiqueDigitaloperano" reportado no QA visual VLM do commit anterior e commitado na mesma. Causa secundária: o whitelist WinAnsi apagava 8+ separadores invisíveis frequentes em texto de IA (U+200B/C/D, U+202F, U+2009, U+2060, U+FEFF…).
+
+**Correcções (cirúrgicas, sem alterar o resto do código):**
+
+1. `motor.ts` — novo método `medirEspaco(estilo)` que mede o espaço SEM saneamento (bypass do `trim()`); `paragrafo()` usa-o para `larguraEspaco`. Espaço nativo preservado em `textoAbs`/`tabela`/`blocoTexto` (esses já eram correctos — strings completas).
+2. `utils.ts` — `SUBSTITUICOES` ganha 18 mapeamentos de separadores invisíveis → espaço (zero-width, thin/narrow/figure spaces, word joiner) e soft-hyphen → removido.
+
+**Verificação:** forense re-executado sobre os PDFs regenerados → **151/151 e 146/146 pares com espaçamento normal (0 colados)**; novo teste de regressão faz parse do content stream e falha se algum gap < 45% da largura do espaço.
+
+**2. Novo template "Cotação Minimalista"** — réplica do layout de referência enviado pelo cliente (mockup de factura moderna, geometria extraída por análise de píxeis + VLM):
+
+- `templateCotacao.ts` (novo): logotipo/marca-inicial à esquerda + **banda de título arredondada** à direita (53% da largura, auto-ajuste 1-2 linhas); bloco de metadados a duas colunas (CLIENTE / PROPOSTA·DATA·VALIDADE·PAGAMENTO compacto); tabela com **cabeçalho na cor da marca** e filetes hairline (sem zebra); área inferior com TERMOS (justificado) à esquerda + totais empilhados à direita com **TOTAL em corpo maior** sobre régua de acento; **banda de rodapé full-bleed** (18 mm) com email/telefone/paginação em todas as páginas; cabeçalho fino de continuação nas páginas 2+; cor de acento derivada da marca (fallback: laranja da referência `#F97316`)
+- `tipos.ts`/`templates.ts`/`gerar.ts`/`index.ts` — `PdfTemplateId` ganha `'cotacao'`; galeria `TEMPLATES_PDF` com 3 entradas; novo `obterTemplateNarrativa()` que **garante que os fluxos narrativos (Doc A/GerarPropostaIA e RevisaoProposta) nunca usam o layout de cotação** — o design narrativo mantém-se intacto, conforme pedido
+- `ResumoProposta.tsx` — a cotação abre por omissão no layout de referência (selector continua a permitir Executivo/Editorial)
+- `TemplateManager.tsx` — galeria em 3 colunas com miniatura CSS fiel ao novo layout
+
+**QA:** VLM (glm-5v) compara referência vs implementação → veredicto **FAITHFUL** em todos os 6 pontos estruturais, sem defeitos, espaçamento correcto; verificação de píxeis confirma banda 83-195 mm alinhada à direita, rodapé full-bleed 279-296 mm, tabela a 118 mm (referência: 111 mm). `tsc 0 · eslint 0 · vitest 20 · build ok`.
+
 ### [2026-09-01] — Geração em PDF com 2 templates modernos + envio por email ao cliente
 
 **Tipo:** refactor arquitectural — decisão de produto (reverte o HTML-only do mesmo dia)

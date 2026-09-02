@@ -11,13 +11,16 @@ import type { jsPDF } from 'jspdf';
 import type { DadosPropostaPdf, PdfTemplateId } from './tipos';
 import { desenharExecutivo } from './templateExecutivo';
 import { desenharEditorial } from './templateEditorial';
+import { desenharCotacao } from './templateCotacao';
 import { nomeFicheiroPdf } from './utils';
 
 /** Gera o documento PDF (vectorial) com o template indicado */
 export function gerarPropostaPdf(dados: DadosPropostaPdf, templateId: PdfTemplateId): jsPDF {
   const motor = templateId === 'editorial'
     ? desenharEditorial(dados)
-    : desenharExecutivo(dados);
+    : templateId === 'cotacao'
+      ? desenharCotacao(dados)
+      : desenharExecutivo(dados);
   return motor.doc;
 }
 

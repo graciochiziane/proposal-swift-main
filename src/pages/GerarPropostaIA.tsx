@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
-import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateDefault } from '@/lib/pdf';
+import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateNarrativa } from '@/lib/pdf';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -229,9 +229,9 @@ export default function GerarPropostaIA() {
     try {
       const dados = construirDadosNarrativaPdf(proposta, dono, seccoes, includedSections);
       if (modo === 'download') {
-        baixarPropostaPdf(dados, obterTemplateDefault());
+        baixarPropostaPdf(dados, obterTemplateNarrativa());
       } else {
-        previsualizarPdf(dados, obterTemplateDefault());
+        previsualizarPdf(dados, obterTemplateNarrativa());
       }
       if (propostaAiId) {
         try {
