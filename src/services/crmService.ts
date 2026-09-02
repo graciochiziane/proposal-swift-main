@@ -455,7 +455,8 @@ export const CrmService = {
         proposals(id)
       `)
       .in('estado_comercial', [
-        'novo', 'contactado', 'qualificado', 'proposta_enviada', 'em_negociacao'
+        'novo', 'contactado', 'qualificado', 'proposta_enviada', 'em_negociacao',
+        'ganho', 'perdido'
       ])
       .order('estado_comercial', { ascending: true });
 

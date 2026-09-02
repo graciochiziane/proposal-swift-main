@@ -70,6 +70,7 @@ export default function ClienteDetalhe() {
   const [activityForm, setActivityForm] = useState({ type: 'nota' as CrmActivityType, title: '', description: '' });
   const [followUpForm, setFollowUpForm] = useState({ title: '', description: '', due_at: '' });
   const [saving, setSaving] = useState(false);
+  const [savingEstado, setSavingEstado] = useState(false);
 
   const loadData = async () => {
     if (!id) return;
@@ -149,6 +150,23 @@ export default function ClienteDetalhe() {
     }
   };
 
+  // P0: mudança de estado comercial — reutiliza CrmService.updateClienteCRM (existente)
+  const handleEstadoChange = async (novoEstado: CrmEstado) => {
+    if (!id || !cliente || novoEstado === cliente.estado_comercial) return;
+    setSavingEstado(true);
+    try {
+      await CrmService.updateClienteCRM(id, { estado_comercial: novoEstado });
+      toast.success('Estado comercial actualizado');
+      await loadData();
+    } catch (err) {
+      console.error('Erro ao actualizar estado comercial:', err);
+      toast.error('Erro ao actualizar o estado comercial');
+      loadData(); // repõe o selector com o estado real da BD em caso de falha
+    } finally {
+      setSavingEstado(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -215,7 +233,18 @@ export default function ClienteDetalhe() {
                 )}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center flex-wrap">
+              <select
+                value={cliente.estado_comercial}
+                onChange={e => handleEstadoChange(e.target.value as CrmEstado)}
+                disabled={savingEstado}
+                aria-label="Estado comercial"
+                className="px-3 py-1.5 rounded-lg bg-secondary border border-border text-sm"
+              >
+                {Object.entries(ESTADO_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
               <Button variant="outline" size="sm" onClick={() => navigate(`/clientes`)} className="gap-2">
                 <Edit3 className="h-4 w-4" />Editar
               </Button>
