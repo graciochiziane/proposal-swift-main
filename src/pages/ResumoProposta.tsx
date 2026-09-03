@@ -7,6 +7,8 @@ import { calcularTotal } from '@/lib/calculos';
 import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf } from '@/lib/pdf';
 import type { PdfTemplateId } from '@/lib/pdf';
 import { propostaEmailService } from '@/services/propostaEmailService';
+import { CrmService } from '@/services/crmService';
+import { usePlanFeatures } from '@/hooks/usePlanFeatures';
 import { FileDown, Eye, Pencil, Copy, Loader2, Sparkles, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { converterPropostaEmFactura, getFaturasPorProposta, atualizarStatusFatura } from '@/services/faturaService';
@@ -15,6 +17,8 @@ import type { Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
 export default function ResumoProposta() {
   const { id } = useParams();
   const navigate = useNavigate();
+  // Item 2 — gate do CRM por plano: evita tentativa de registo em orgs sem CRM
+  const { hasFeature } = usePlanFeatures();
   // cotação abre por omissão no layout de referência (factura moderna);
   // o selector continua a permitir trocar para Executivo/Editorial
   const [templateId, setTemplateId] = useState<PdfTemplateId>('cotacao');
@@ -149,6 +153,22 @@ export default function ResumoProposta() {
             setProposta(prev => (prev ? { ...prev, status: 'enviada' } : prev));
           } catch {
             console.warn('Falha ao actualizar status para enviada (email enviado)');
+          }
+        }
+        // Item 2 — registo automático da actividade no CRM.
+        // Nunca bloqueia o envio: o email JÁ foi enviado com sucesso;
+        // uma falha aqui é registada e ignorada (o envio continua válido).
+        if (cliente.id && hasFeature('crm_access')) {
+          try {
+            await CrmService.createActivity({
+              client_id: cliente.id,
+              proposal_id: proposta.id,
+              type: 'proposta_enviada',
+              title: `Proposta ${proposta.numero} enviada por email`,
+              description: `Destinatário: ${emailPara.trim()}`,
+            });
+          } catch (crmErr) {
+            console.warn('CRM: falha ao registar actividade de proposta enviada (envio bem-sucedido):', crmErr);
           }
         }
       } else if (resultado.avisoSemApiChave) {
