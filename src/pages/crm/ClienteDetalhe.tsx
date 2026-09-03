@@ -9,7 +9,8 @@ import {
   Loader2, AlertCircle, FileText, Clock, Calendar,
   Plus, Check, ChevronRight,
 } from 'lucide-react';
-import { CrmService, type ClienteWithCRM, type CrmActivity, type CrmFollowUp, type CrmEstado, type CrmActivityType } from '@/services/crmService';
+import { CrmService, type ClienteWithCRM, type CrmActivity, type CrmFollowUp, type CrmEstado, type CrmActivityType, type CrmOrigem } from '@/services/crmService';
+import { MemberService, type MemberWithProfile } from '@/services/memberService';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +27,13 @@ const ESTADO_LABELS: Record<CrmEstado, string> = {
   novo: 'Novo', contactado: 'Contactado', qualificado: 'Qualificado',
   proposta_enviada: 'Proposta Enviada', em_negociacao: 'Em Negociação',
   ganho: 'Ganho', perdido: 'Perdido', inactivo: 'Inactivo',
+};
+
+// Item 1 — CrmOrigem real do crmService (enum da migração CRM)
+const ORIGEM_LABELS: Record<CrmOrigem, string> = {
+  whatsapp: 'WhatsApp', facebook: 'Facebook', instagram: 'Instagram',
+  website: 'Website', referencia: 'Referência',
+  cliente_existente: 'Cliente Existente', outro: 'Outro',
 };
 
 const ACTIVITY_TYPES: { value: CrmActivityType; label: string }[] = [
@@ -71,6 +79,64 @@ export default function ClienteDetalhe() {
   const [followUpForm, setFollowUpForm] = useState({ title: '', description: '', due_at: '' });
   const [saving, setSaving] = useState(false);
   const [savingEstado, setSavingEstado] = useState(false);
+
+  // Item 1 — dados comerciais editáveis (valor/origem/responsável)
+  const [members, setMembers] = useState<MemberWithProfile[]>([]);
+  const [comercialForm, setComercialForm] = useState({ valor: '', origem: '', responsavel: '' });
+  const [savingComercial, setSavingComercial] = useState(false);
+
+  // Item 1 — membros da org para o selector de responsável (load único)
+  useEffect(() => {
+    MemberService.getMembers()
+      .then(setMembers)
+      .catch(err => console.error('Erro ao carregar membros (responsável):', err));
+  }, []);
+
+  // Item 1 — inicializa o formulário comercial a partir do cliente carregado.
+  // Deps granulares deliberadas: repõe o form só quando os valores da BD mudam
+  // (ex: após guardar), nunca a meio da edição — incluir 'cliente' objecto
+  // reiniciaria o input do utilizador em cada re-render.
+  useEffect(() => {
+    if (cliente) {
+      setComercialForm({
+        valor: String(Number(cliente.valor_potencial) || 0),
+        origem: cliente.origem ?? '',
+        responsavel: cliente.responsavel_id ?? '',
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliente?.id, cliente?.valor_potencial, cliente?.origem, cliente?.responsavel_id]);
+
+  // Item 1 — guardar valor/origem/responsável via updateClienteCRM (reutilizado, P0)
+  const handleSaveComercial = async () => {
+    if (!id || !cliente) return;
+    const valorNum = Number(comercialForm.valor);
+    if (!Number.isFinite(valorNum) || valorNum < 0) {
+      toast.error('Valor potencial inválido');
+      return;
+    }
+    setSavingComercial(true);
+    try {
+      await CrmService.updateClienteCRM(id, {
+        valor_potencial: valorNum,
+        origem: (comercialForm.origem || null) as CrmOrigem | null,
+        responsavel_id: comercialForm.responsavel || null,
+      });
+      toast.success('Dados comerciais actualizados');
+      await loadData();
+    } catch (err) {
+      console.error('Erro ao guardar dados comerciais:', err);
+      toast.error('Erro ao guardar dados comerciais');
+      // repõe o formulário com os valores reais da BD
+      setComercialForm({
+        valor: String(Number(cliente.valor_potencial) || 0),
+        origem: cliente.origem ?? '',
+        responsavel: cliente.responsavel_id ?? '',
+      });
+    } finally {
+      setSavingComercial(false);
+    }
+  };
 
   const loadData = async () => {
     if (!id) return;
@@ -191,6 +257,16 @@ export default function ClienteDetalhe() {
 
   const pendingFollowUps = followUps.filter(f => !f.completed_at);
 
+  // Item 1 — nome do responsável actual (membro da org ou fallback)
+  const responsavelMembro = cliente.responsavel_id
+    ? members.find(m => m.user_id === cliente.responsavel_id)
+    : undefined;
+  const responsavelNome = cliente.responsavel_id
+    ? (responsavelMembro
+        ? (responsavelMembro.profileNome || responsavelMembro.display_name || responsavelMembro.profileEmail)
+        : 'Utilizador removido')
+    : '—';
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Back */}
@@ -254,11 +330,25 @@ export default function ClienteDetalhe() {
       </Card>
 
       {/* Summary grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-xs text-muted-foreground mb-1">Valor Potencial</div>
             <div className="text-lg font-bold text-emerald-600">{formatMZN(cliente.valor_potencial)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground mb-1">Origem</div>
+            <div className="text-sm font-medium">
+              {cliente.origem ? ORIGEM_LABELS[cliente.origem] : '—'}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-muted-foreground mb-1">Responsável</div>
+            <div className="text-sm font-medium">{responsavelNome}</div>
           </CardContent>
         </Card>
         <Card>
@@ -284,6 +374,66 @@ export default function ClienteDetalhe() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Item 1 — Dados comerciais editáveis (valor/origem/responsável) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Dados Comerciais</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="valor-potencial">Valor Potencial (MZN)</Label>
+              <Input
+                id="valor-potencial"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                value={comercialForm.valor}
+                onChange={e => setComercialForm({ ...comercialForm, valor: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="origem">Origem</Label>
+              <select
+                id="origem"
+                value={comercialForm.origem}
+                onChange={e => setComercialForm({ ...comercialForm, origem: e.target.value })}
+                aria-label="Origem"
+                className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm"
+              >
+                <option value="">—</option>
+                {Object.entries(ORIGEM_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="responsavel">Responsável</Label>
+              <select
+                id="responsavel"
+                value={comercialForm.responsavel}
+                onChange={e => setComercialForm({ ...comercialForm, responsavel: e.target.value })}
+                aria-label="Responsável"
+                className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm"
+              >
+                <option value="">—</option>
+                {members.map(m => {
+                  const nome = m.profileNome || m.display_name || m.profileEmail;
+                  return <option key={m.user_id} value={m.user_id}>{nome}</option>;
+                })}
+              </select>
+            </div>
+          </div>
+          <div className="mt-4">
+            <Button size="sm" onClick={handleSaveComercial} disabled={savingComercial}>
+              {savingComercial ? 'A guardar...' : 'Guardar alterações'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Two columns: Propostas + Actividades/Follow-ups */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
