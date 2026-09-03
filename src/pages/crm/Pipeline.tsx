@@ -23,6 +23,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatMZN } from '@/services/propostaService';
+import { toast } from 'sonner';
 
 const PIPELINE_STAGES: { estado: CrmEstado; label: string; shortLabel: string; color: string; dotColor: string; bg: string }[] = [
   { estado: 'novo',              label: 'Novos',              shortLabel: 'Novo',         color: 'text-slate-600',   dotColor: 'bg-slate-400',   bg: 'bg-slate-50' },
@@ -63,6 +64,10 @@ export default function Pipeline() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
+  // Item 5 — drag & drop (HTML5 nativo, sem novas dependências)
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<CrmEstado | null>(null);
+
   const loadPipeline = async () => {
     setLoading(true);
     setError(null);
@@ -92,6 +97,38 @@ export default function Pipeline() {
   const byStage = (stage: CrmEstado) => filtered.filter(o => o.estado_comercial === stage);
   const stageValue = (stage: CrmEstado) => byStage(stage).reduce((sum, o) => sum + o.valor_potencial, 0);
   const totalValue = filtered.reduce((sum, o) => sum + o.valor_potencial, 0);
+
+  // Item 5 — mover oportunidade entre etapas com actualização optimista.
+  // Falha => rollback visual ao estado anterior da BD + toast.
+  // Fallback garantido: o selector de estado na ficha do contacto (P0) continua disponível.
+  const handleDrop = async (targetStage: CrmEstado) => {
+    setDragOverStage(null);
+    const client_id = draggingId;
+    setDraggingId(null);
+    if (!client_id) return;
+
+    const opp = opportunities.find(o => o.client_id === client_id);
+    if (!opp || opp.estado_comercial === targetStage) return;
+    const estadoAnterior = opp.estado_comercial;
+
+    // Optimista: UI muda imediatamente
+    setOpportunities(prev =>
+      prev.map(o => (o.client_id === client_id ? { ...o, estado_comercial: targetStage } : o))
+    );
+
+    try {
+      await CrmService.updateClienteCRM(client_id, { estado_comercial: targetStage });
+      const label = PIPELINE_STAGES.find(s => s.estado === targetStage)?.shortLabel ?? targetStage;
+      toast.success(`Movido para ${label}`);
+    } catch (err) {
+      console.error('Erro ao mover oportunidade:', err);
+      // Rollback visual: repõe o estado anterior
+      setOpportunities(prev =>
+        prev.map(o => (o.client_id === client_id ? { ...o, estado_comercial: estadoAnterior } : o))
+      );
+      toast.error('Erro ao mover — use o selector de estado na ficha do contacto');
+    }
+  };
 
   if (loading) {
     return (
@@ -164,14 +201,31 @@ export default function Pipeline() {
         </div>
       </div>
 
-      {/* Desktop Kanban — horizontal scroll */}
+      {/* Desktop Kanban — horizontal scroll com drag & drop (Item 5) */}
       <div className="hidden md:flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
         {PIPELINE_STAGES.map(stage => {
           const items = byStage(stage.estado);
+          const isDropTarget = dragOverStage === stage.estado && draggingId !== null;
           return (
-            <div key={stage.estado} className="flex-shrink-0 w-72">
+            <div
+              key={stage.estado}
+              className="flex-shrink-0 w-72"
+              onDragOver={e => {
+                e.preventDefault(); // necessário para permitir o drop
+                e.dataTransfer.dropEffect = 'move';
+                setDragOverStage(stage.estado);
+              }}
+              onDragLeave={e => {
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                setDragOverStage(prev => (prev === stage.estado ? null : prev));
+              }}
+              onDrop={e => {
+                e.preventDefault();
+                handleDrop(stage.estado);
+              }}
+            >
               {/* Column header */}
-              <div className={`rounded-t-xl ${stage.bg} px-3 py-2.5 border-b border-border`}>
+              <div className={`rounded-t-xl ${stage.bg} px-3 py-2.5 border-b border-border ${isDropTarget ? 'ring-2 ring-primary/50' : ''}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={`h-2 w-2 rounded-full ${stage.dotColor}`} />
@@ -187,17 +241,20 @@ export default function Pipeline() {
               </div>
 
               {/* Cards */}
-              <div className="space-y-2 mt-2 min-h-[100px]">
+              <div className={`space-y-2 mt-2 min-h-[100px] rounded-lg transition-colors ${isDropTarget ? 'bg-primary/5 ring-1 ring-primary/30' : ''}`}>
                 {items.map(opp => (
                   <OpportunityCard
                     key={opp.client_id}
                     opp={opp}
+                    isDragging={draggingId === opp.client_id}
+                    onDragStart={() => setDraggingId(opp.client_id)}
+                    onDragEnd={() => setDraggingId(null)}
                     onClick={() => navigate(`/crm/contactos/${opp.client_id}`)}
                   />
                 ))}
                 {items.length === 0 && (
                   <div className="text-xs text-muted-foreground/40 text-center py-8 border border-dashed border-border/50 rounded-lg">
-                    Vazio
+                    {draggingId ? 'Largar aqui' : 'Vazio'}
                   </div>
                 )}
               </div>
@@ -240,22 +297,36 @@ export default function Pipeline() {
 
 // ============================================================
 // OpportunityCard — cartão rico com informação comercial
+// Item 5 — draggable (HTML5 nativo); o click continua a navegar
 // ============================================================
 
 function OpportunityCard({
   opp,
   onClick,
+  isDragging = false,
+  onDragStart,
+  onDragEnd,
 }: {
   opp: PipelineOpportunity;
   onClick: () => void;
+  isDragging?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }) {
   const followUp = timeUntil(opp.proximo_contacto);
   const lastActivity = timeAgo(opp.ultimo_contacto);
 
   return (
     <Card
-      className="cursor-pointer hover:border-primary/40 hover:shadow-md transition-all group"
+      className={`cursor-pointer hover:border-primary/40 hover:shadow-md transition-all group ${isDragging ? 'opacity-50 border-primary/60' : ''}`}
       onClick={onClick}
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', opp.client_id);
+        onDragStart?.();
+      }}
+      onDragEnd={() => onDragEnd?.()}
     >
       <CardContent className="p-3.5 space-y-2.5">
         {/* Nome + empresa */}
