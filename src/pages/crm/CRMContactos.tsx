@@ -6,13 +6,19 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Loader2, AlertCircle, Users, ChevronRight,
-  Phone, Mail, Building2, Clock,
+  Phone, Mail, Building2, Clock, Tag as TagIcon, X,
 } from 'lucide-react';
-import { CrmService, type ClienteWithCRM, type CrmEstado } from '@/services/crmService';
+import { CrmService, type ClienteWithCRM, type CrmEstado, type CrmTag } from '@/services/crmService';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { formatMZN } from '@/services/propostaService';
+import { toast } from 'sonner';
+
+// Item 4 — paleta de cores preset para tags (sem novas dependências)
+const TAG_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#ec4899', '#6b7280'];
 
 const ESTADO_CONFIG: Record<CrmEstado, { label: string; cor: string; bg: string; dot: string }> = {
   novo:              { label: 'Novo',              cor: 'text-blue-600',    bg: 'bg-blue-100',    dot: 'bg-blue-500' },
@@ -44,6 +50,27 @@ export default function CRMContactos() {
   const [search, setSearch] = useState('');
   const [filterEstado, setFilterEstado] = useState<CrmEstado | ''>('');
 
+  // Item 4 — tags: filtragem + gestão
+  const [tags, setTags] = useState<CrmTag[]>([]);
+  const [filterTag, setFilterTag] = useState('');
+  const [showTagsModal, setShowTagsModal] = useState(false);
+  const [newTagNome, setNewTagNome] = useState('');
+  const [newTagCor, setNewTagCor] = useState(TAG_COLORS[0]);
+  const [savingTag, setSavingTag] = useState(false);
+  const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
+
+  const loadTags = async () => {
+    try {
+      setTags(await CrmService.getTags());
+    } catch (err) {
+      console.error('Erro ao carregar tags:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadTags();
+  }, []);
+
   const loadClientes = async () => {
     setLoading(true);
     setError(null);
@@ -66,7 +93,50 @@ export default function CRMContactos() {
     return () => clearTimeout(timer);
   }, [search, filterEstado]);
 
-  const filtered = useMemo(() => clientes, [clientes]);
+  // Item 4 — filtro por tag (client-side: as tags já vêm no join de getClientesCRM)
+  const filtered = useMemo(
+    () => clientes.filter(c => !filterTag || (c.tags ?? []).some(t => t.id === filterTag)),
+    [clientes, filterTag]
+  );
+
+  // Item 4 — criar tag (UNIQUE (organization_id, name) na BD)
+  const handleCreateTag = async () => {
+    const nome = newTagNome.trim();
+    if (!nome) return;
+    if (tags.some(t => t.name.toLowerCase() === nome.toLowerCase())) {
+      toast.error('Já existe uma tag com esse nome');
+      return;
+    }
+    setSavingTag(true);
+    try {
+      await CrmService.createTag(nome, newTagCor);
+      toast.success('Tag criada');
+      setNewTagNome('');
+      await loadTags();
+    } catch (err) {
+      console.error('Erro ao criar tag:', err);
+      toast.error('Erro ao criar tag');
+    } finally {
+      setSavingTag(false);
+    }
+  };
+
+  // Item 4 — apagar tag (FK ON DELETE CASCADE limpa atribuições;
+  // recarrega contactos porque os cards mostram as tags)
+  const handleDeleteTag = async (id: string) => {
+    setDeletingTagId(id);
+    try {
+      await CrmService.deleteTag(id);
+      if (filterTag === id) setFilterTag('');
+      await Promise.all([loadTags(), loadClientes()]);
+      toast.success('Tag apagada');
+    } catch (err) {
+      console.error('Erro ao apagar tag:', err);
+      toast.error('Erro ao apagar tag');
+    } finally {
+      setDeletingTagId(null);
+    }
+  };
 
   if (loading && clientes.length === 0) {
     return (
@@ -125,6 +195,21 @@ export default function CRMContactos() {
             <option key={key} value={key}>{cfg.label}</option>
           ))}
         </select>
+        {/* Item 4 — filtro por tag */}
+        <select
+          value={filterTag}
+          onChange={e => setFilterTag(e.target.value)}
+          aria-label="Filtrar por tag"
+          className="px-3 py-2 rounded-lg bg-secondary border border-border text-sm"
+        >
+          <option value="">Todas as tags</option>
+          {tags.map(t => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        <Button variant="outline" onClick={() => setShowTagsModal(true)} className="gap-2">
+          <TagIcon className="h-4 w-4" />Tags
+        </Button>
       </div>
 
       {/* Empty state */}
@@ -135,7 +220,7 @@ export default function CRMContactos() {
               <Users className="h-10 w-10 text-muted-foreground" />
             </div>
             <h2 className="text-lg font-semibold">
-              {search || filterEstado ? 'Nenhum contacto encontrado' : 'Nenhum contacto ainda'}
+              {search || filterEstado || filterTag ? 'Nenhum contacto encontrado' : 'Nenhum contacto ainda'}
             </h2>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
               {search || filterEstado
@@ -232,6 +317,76 @@ export default function CRMContactos() {
           })}
         </div>
       )}
+
+      {/* Item 4 — gestão de tags */}
+      <Dialog open={showTagsModal} onOpenChange={setShowTagsModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Gerir Tags</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {tags.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma tag criada. Crie tags para classificar e filtrar contactos.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                {tags.map(t => (
+                  <div key={t.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/50">
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-medium"
+                      style={{ backgroundColor: `${t.color}20`, color: t.color }}
+                    >
+                      {t.name}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeleteTag(t.id)}
+                      disabled={deletingTagId === t.id}
+                      aria-label={`Apagar tag ${t.name}`}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      {deletingTagId === t.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <X className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="space-y-1.5 pt-2 border-t">
+              <Label>Nova tag</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={newTagNome}
+                  onChange={e => setNewTagNome(e.target.value)}
+                  placeholder="Ex: VIP"
+                  maxLength={30}
+                />
+                <Button onClick={handleCreateTag} disabled={savingTag || !newTagNome.trim()}>
+                  {savingTag ? 'A criar...' : 'Criar'}
+                </Button>
+              </div>
+              <div className="flex gap-1.5 pt-1.5 flex-wrap">
+                {TAG_COLORS.map(cor => (
+                  <button
+                    key={cor}
+                    type="button"
+                    onClick={() => setNewTagCor(cor)}
+                    className={`h-5 w-5 rounded-full transition-shadow ${newTagCor === cor ? 'ring-2 ring-offset-2 ring-primary' : ''}`}
+                    style={{ backgroundColor: cor }}
+                    aria-label={`Cor ${cor}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

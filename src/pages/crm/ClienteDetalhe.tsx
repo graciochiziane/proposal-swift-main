@@ -9,7 +9,7 @@ import {
   Loader2, AlertCircle, FileText, Clock, Calendar,
   Plus, Check, ChevronRight,
 } from 'lucide-react';
-import { CrmService, type ClienteWithCRM, type CrmActivity, type CrmFollowUp, type CrmEstado, type CrmActivityType, type CrmOrigem } from '@/services/crmService';
+import { CrmService, type ClienteWithCRM, type CrmActivity, type CrmFollowUp, type CrmEstado, type CrmActivityType, type CrmOrigem, type CrmTag } from '@/services/crmService';
 import { MemberService, type MemberWithProfile } from '@/services/memberService';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -91,6 +91,23 @@ export default function ClienteDetalhe() {
       .then(setMembers)
       .catch(err => console.error('Erro ao carregar membros (responsável):', err));
   }, []);
+
+  // Item 4 — tags: catálogo da org + selecção actual do contacto
+  const [allTags, setAllTags] = useState<CrmTag[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [savingTags, setSavingTags] = useState(false);
+
+  useEffect(() => {
+    CrmService.getTags()
+      .then(setAllTags)
+      .catch(err => console.error('Erro ao carregar tags:', err));
+  }, []);
+
+  // Repõe a selecção quando as tags do contacto no servidor mudam
+  // (ex: após guardar); nunca a meio da edição (deps granulares).
+  useEffect(() => {
+    setSelectedTagIds((cliente?.tags ?? []).map(t => t.id));
+  }, [cliente?.id, cliente?.tags]);
 
   // Item 1 — inicializa o formulário comercial a partir do cliente carregado.
   // Deps granulares deliberadas: repõe o form só quando os valores da BD mudam
@@ -217,6 +234,29 @@ export default function ClienteDetalhe() {
   };
 
   // P0: mudança de estado comercial — reutiliza CrmService.updateClienteCRM (existente)
+  // Item 4 — guardar tags do contacto via setClientTags (reutilizado)
+  const toggleTag = (tagId: string) => {
+    setSelectedTagIds(prev =>
+      prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]
+    );
+  };
+
+  const handleSaveTags = async () => {
+    if (!id) return;
+    setSavingTags(true);
+    try {
+      await CrmService.setClientTags(id, selectedTagIds);
+      toast.success('Tags actualizadas');
+      await loadData();
+    } catch (err) {
+      console.error('Erro ao guardar tags:', err);
+      toast.error('Erro ao guardar tags');
+      setSelectedTagIds((cliente?.tags ?? []).map(t => t.id));
+    } finally {
+      setSavingTags(false);
+    }
+  };
+
   const handleEstadoChange = async (novoEstado: CrmEstado) => {
     if (!id || !cliente || novoEstado === cliente.estado_comercial) return;
     setSavingEstado(true);
@@ -431,6 +471,44 @@ export default function ClienteDetalhe() {
             <Button size="sm" onClick={handleSaveComercial} disabled={savingComercial}>
               {savingComercial ? 'A guardar...' : 'Guardar alterações'}
             </Button>
+          </div>
+
+          {/* Item 4 — atribuição de tags ao contacto */}
+          <div className="mt-4 pt-4 border-t space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <Label>Tags</Label>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSaveTags}
+                disabled={savingTags}
+              >
+                {savingTags ? 'A guardar...' : 'Guardar tags'}
+              </Button>
+            </div>
+            {allTags.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Sem tags na organização — crie-as na página de Contactos (botão Tags).
+              </p>
+            ) : (
+              <div className="flex gap-1.5 flex-wrap">
+                {allTags.map(tag => {
+                  const activa = selectedTagIds.includes(tag.id);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.id)}
+                      aria-pressed={activa}
+                      className={`px-2 py-0.5 rounded text-xs font-medium transition-opacity ${activa ? '' : 'opacity-40 hover:opacity-70'}`}
+                      style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                    >
+                      {tag.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
