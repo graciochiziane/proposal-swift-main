@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import { ProfileService } from '@/services/profileService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
-import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateNarrativa } from '@/lib/pdf';
+import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateDefault, definirTemplateDefault, TEMPLATES_PDF } from '@/lib/pdf';
+import type { PdfTemplateId } from '@/lib/pdf';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -219,9 +220,18 @@ export default function GerarPropostaIA() {
   };
 
   // ---- Export (Doc A = proposta narrativa, Doc B = cotacao) ----
-  // Doc A: PDF vectorial com o template por omissão (narrativa IA
-  // sem tabela financeira); a cotação (Doc B) é gerada no Resumo.
+  // Doc A: PDF vectorial com o modelo escolhido no selector abaixo
+  // (a escolha é gravada como omissão global e obedecida aqui e no
+  // resto do app); a cotação (Doc B) é gerada no Resumo.
   const [isExporting, setIsExporting] = useState(false);
+  const [templateId, setTemplateId] = useState<PdfTemplateId>(obterTemplateDefault());
+
+  /** A escolha do modelo é imediata e passa a ser a omissão do app. */
+  const handleTemplateChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    const novo = e.target.value as PdfTemplateId;
+    setTemplateId(novo);
+    definirTemplateDefault(novo);
+  };
 
   const handleExportProposta = async (modo: 'download' | 'preview' = 'download') => {
     if (!proposta || !dono || !seccoes) return;
@@ -229,9 +239,9 @@ export default function GerarPropostaIA() {
     try {
       const dados = construirDadosNarrativaPdf(proposta, dono, seccoes, includedSections);
       if (modo === 'download') {
-        baixarPropostaPdf(dados, obterTemplateNarrativa());
+        baixarPropostaPdf(dados, templateId);
       } else {
-        previsualizarPdf(dados, obterTemplateNarrativa());
+        previsualizarPdf(dados, templateId);
       }
       if (propostaAiId) {
         try {
@@ -529,6 +539,18 @@ export default function GerarPropostaIA() {
         <div className="flex items-center gap-2">
           {seccoes && !isGenerating && (
             <Fragment>
+              <select
+                value={templateId}
+                onChange={handleTemplateChange}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
+                title="Modelo PDF da proposta — a escolha passa a ser a omissão"
+              >
+                {TEMPLATES_PDF.map(t => (
+                  <option key={t.id} value={t.id}>
+                    Modelo: {t.nome}
+                  </option>
+                ))}
+              </select>
               <Button
                 variant="outline"
                 size="sm"

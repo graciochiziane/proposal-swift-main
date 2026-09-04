@@ -70,17 +70,6 @@ export function obterTemplateDefault(): PdfTemplateId {
   return 'executivo';
 }
 
-/**
- * Template para documentos NARRATIVOS (Doc A / proposta avançada):
- * nunca devolve 'cotacao' — o layout de cotação é exclusivo do
- * fluxo financeiro (Resumo da Proposta), mantendo o design
- * narrativo intacto.
- */
-export function obterTemplateNarrativa(): 'executivo' | 'editorial' {
-  const guardado = obterTemplateDefault();
-  return guardado === 'cotacao' ? 'executivo' : guardado;
-}
-
 export function definirTemplateDefault(id: PdfTemplateId): void {
   try {
     localStorage.setItem(CHAVE_DEFAULT, id);
