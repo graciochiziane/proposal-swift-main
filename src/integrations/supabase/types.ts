@@ -974,6 +974,7 @@ export type Database = {
           nome: string | null
           nuit: string | null
           organization_id: string | null
+          pagamentos_extras: Json
           plano: Database["public"]["Enums"]["plan_tier"]
           propostas_mes_count: number
           propostas_mes_reset_at: string
@@ -995,6 +996,7 @@ export type Database = {
           nome?: string | null
           nuit?: string | null
           organization_id?: string | null
+          pagamentos_extras?: Json
           plano?: Database["public"]["Enums"]["plan_tier"]
           propostas_mes_count?: number
           propostas_mes_reset_at?: string
@@ -1016,6 +1018,7 @@ export type Database = {
           nome?: string | null
           nuit?: string | null
           organization_id?: string | null
+          pagamentos_extras?: Json
           plano?: Database["public"]["Enums"]["plan_tier"]
           propostas_mes_count?: number
           propostas_mes_reset_at?: string

@@ -73,6 +73,9 @@ export interface PagamentoPdf {
   mpesa?: string;
   emola?: string;
   mkesh?: string;
+  /** Formas adicionais criadas pelo dono nas Configurações —
+   *  aparecem depois das fixas, no estilo de cada modelo. */
+  extras?: Array<{ rotulo: string; valor: string }>;
 }
 
 /**

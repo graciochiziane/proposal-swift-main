@@ -50,6 +50,18 @@ export interface MobileMoney {
   mkesh: { ativo: boolean; numero: string };
 }
 
+/**
+ * Forma de pagamento adicional criada pelo dono nas Configurações
+ * (dinâmica, não hardcoded) — ex.: "M-Pesa (Conta 2)", "PayPal".
+ * Guardada em profiles.pagamentos_extras (JSONB); opcional para
+ * compatibilidade com dados gravados antes da coluna existir.
+ */
+export interface PagamentoExtra {
+  rotulo: string;
+  valor: string;
+  ativo: boolean;
+}
+
 export interface CatalogoItem {
   id: string;
   nome: string;
@@ -67,6 +79,9 @@ export interface DonoProposta {
   corPrimaria: string; // hex color
   dadosBancarios: DadosBancarios;
   mobileMoney: MobileMoney;
+  // Formas de pagamento adicionais definidas pelo dono (dinâmicas);
+  // aparecem no PDF depois das formas fixas acima.
+  pagamentosExtras?: PagamentoExtra[];
   // Opcionais — impressos no bloco Emitente dos modelos PDF
   // (ver src/lib/pdf/converter.ts)
   email?: string;

@@ -38,6 +38,10 @@ function calcularTotais(proposta: Proposta): TotaisPdf {
 function extrairPagamento(dono: DonoProposta): PagamentoPdf | undefined {
   const banco = dono.dadosBancarios;
   const mm = dono.mobileMoney;
+  // Extras dinâmicos: só os activos e preenchidos entram no PDF
+  const extras = (dono.pagamentosExtras ?? [])
+    .filter(x => x.ativo && x.rotulo.trim() && x.valor.trim())
+    .map(x => ({ rotulo: x.rotulo.trim(), valor: x.valor.trim() }));
   const pagamento: PagamentoPdf = {
     banco: banco?.ativo ? banco.banco : undefined,
     conta: banco?.ativo ? banco.numeroConta : undefined,
@@ -45,6 +49,7 @@ function extrairPagamento(dono: DonoProposta): PagamentoPdf | undefined {
     mpesa: mm?.mpesa?.ativo ? mm.mpesa.numero : undefined,
     emola: mm?.emola?.ativo ? mm.emola.numero : undefined,
     mkesh: mm?.mkesh?.ativo ? mm.mkesh.numero : undefined,
+    extras: extras.length > 0 ? extras : undefined,
   };
   return Object.values(pagamento).some(Boolean) ? pagamento : undefined;
 }

@@ -351,6 +351,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   cor_primaria TEXT DEFAULT '#0B5394',
   dados_bancarios JSONB NOT NULL DEFAULT '{"ativo":false,"banco":"","numeroConta":"","nib":""}'::jsonb,
   mobile_money JSONB NOT NULL DEFAULT '{"mpesa":{"ativo":false,"numero":""},"emola":{"ativo":false,"numero":""},"mkesh":{"ativo":false,"numero":""}}'::jsonb,
+  pagamentos_extras JSONB NOT NULL DEFAULT '[]'::jsonb,
   plano public.plan_tier NOT NULL DEFAULT 'free',
   propostas_mes_count INT NOT NULL DEFAULT 0,
   propostas_mes_reset_at TIMESTAMPTZ NOT NULL DEFAULT date_trunc('month', now()) + INTERVAL '1 month',

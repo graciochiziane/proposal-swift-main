@@ -49,6 +49,9 @@ export const ProfileService = {
       // Cast duplo documentado: fronteira BD Json -> tipo de domínio.
       dadosBancarios: data.dados_bancarios as unknown as DonoProposta['dadosBancarios'],
       mobileMoney: data.mobile_money as unknown as DonoProposta['mobileMoney'],
+      // Extras dinâmicos (coluna nova, default '[]' na BD; '?? []' cobre
+      // o intervalo em que a migração ainda não foi aplicada em staging)
+      pagamentosExtras: data.pagamentos_extras as unknown as DonoProposta['pagamentosExtras'] ?? [],
     };
   },
 
@@ -140,6 +143,7 @@ export const ProfileService = {
       cor_primaria: perfil.corPrimaria,
       dados_bancarios: perfil.dadosBancarios,
       mobile_money: perfil.mobileMoney,
+      pagamentos_extras: perfil.pagamentosExtras ?? [],
     };
 
     if (logoPath) {

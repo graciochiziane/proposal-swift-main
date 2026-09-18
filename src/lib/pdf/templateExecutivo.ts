@@ -289,6 +289,8 @@ function desenharConteudo(motor: MotorPdf, dados: DadosPropostaPdf, p: Paleta): 
     pag?.mpesa ? ['M-Pesa', pag.mpesa] : null,
     pag?.emola ? ['e-Mola', pag.emola] : null,
     pag?.mkesh ? ['mKesh', pag.mkesh] : null,
+    // formas dinâmicas criadas pelo dono — cartões iguais aos fixos
+    ...(pag?.extras ?? []).map(x => [x.rotulo, x.valor] as [string, string]),
   ].filter(Boolean) as Array<[string, string]>;
 
   if (camposPagamento.length > 0) {

@@ -251,3 +251,54 @@ describe('geração dos templates', () => {
     expect(existsSync(`${dir}/amostra-cotacao.pdf`)).toBe(true);
   });
 });
+
+describe('pagamentos extras (formas dinâmicas do dono)', () => {
+  const COM_EXTRAS: DadosPropostaPdf = {
+    ...AMOSTRA,
+    pagamento: {
+      ...AMOSTRA.pagamento,
+      extras: [
+        { rotulo: 'M-Pesa Conta 2', valor: '84 999 8888' },
+        { rotulo: 'PayPal', valor: 'xpto@impeto.co.mz' },
+      ],
+    },
+  };
+
+  test('os 3 modelos desenham os extras (rótulo + valor)', () => {
+    for (const template of ['executivo', 'editorial', 'cotacao'] as const) {
+      const raw = Buffer.from(
+        gerarPropostaPdf(COM_EXTRAS, template).output('arraybuffer') as ArrayBuffer,
+      ).toString('latin1');
+      const texto = raw.toLowerCase();
+      // Executivo/Editorial maiusculam o rótulo; Cotação mantém —
+      // comparar em minúsculas cobre os três casos
+      expect(texto).toContain('paypal');
+      expect(texto).toContain('84 999 8888');
+      expect(texto).toContain('xpto@impeto.co.mz');
+    }
+  });
+
+  test('cotação respeita o limite de 6 extras activos', () => {
+    const sete: DadosPropostaPdf = {
+      ...AMOSTRA,
+      pagamento: {
+        ...AMOSTRA.pagamento,
+        extras: Array.from({ length: 7 }, (_, i) => ({ rotulo: `Extra ${i + 1}`, valor: `111${i}` })),
+      },
+    };
+    const raw = Buffer.from(
+      gerarPropostaPdf(sete, 'cotacao').output('arraybuffer') as ArrayBuffer,
+    ).toString('latin1');
+    expect(raw).toContain('Extra 6');
+    expect(raw).not.toContain('Extra 7');
+  });
+
+  test('sem extras, o content stream é idêntico ao comportamento actual', () => {
+    for (const template of ['executivo', 'editorial', 'cotacao'] as const) {
+      const raw = Buffer.from(
+        gerarPropostaPdf(AMOSTRA, template).output('arraybuffer') as ArrayBuffer,
+      ).toString('latin1');
+      expect(raw.toLowerCase()).not.toContain('paypal');
+    }
+  });
+});

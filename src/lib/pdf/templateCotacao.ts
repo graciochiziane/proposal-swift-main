@@ -228,11 +228,17 @@ function desenharBlocoInfo(motor: MotorPdf, dados: DadosPropostaPdf): void {
     pag?.mkesh ? `mKesh ${pag.mkesh}` : '',
   ].filter(Boolean).join('  ·  ');
   if (mobile) linhasPag.push(mobile);
+  // formas dinâmicas criadas pelo dono — linhas compactas, máx. 6
+  // activas (limite acordado para não estourar a coluna estreita)
+  for (const extra of (pag?.extras ?? []).slice(0, 6)) {
+    linhasPag.push(`${extra.rotulo} ${extra.valor}`);
+  }
 
   if (linhasPag.length > 0) {
     motor.textoAbs('PAGAMENTO', xDir, pyD + 2.4, { fonte: 'helvetica', peso: 'bold', tamanho: 8 }, COR_CINZA);
     pyD += 6.6;
-    for (const linha of linhasPag.slice(0, 5)) {
+    // 4 linhas fixas (banco/conta/NIB/mobile) + até 6 extras
+    for (const linha of linhasPag.slice(0, 10)) {
       const quebradas = motor.quebrarTexto(linha, larguraDir, { fonte: 'helvetica', peso: 'normal', tamanho: 8.5 }, 1.25).linhas;
       for (const q of quebradas.slice(0, 2)) {
         motor.textoAbs(q, xDir, pyD + 2.4, { fonte: 'helvetica', peso: 'normal', tamanho: 8.5 }, COR_TEXTO);

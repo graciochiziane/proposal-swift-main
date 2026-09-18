@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { ProfileService } from '@/services/profileService';
 import { toast } from 'sonner';
-import type { DonoProposta } from '@/types';
-import { Loader2 } from 'lucide-react';
+import type { DonoProposta, PagamentoExtra } from '@/types';
+import { Loader2, Plus, X } from 'lucide-react';
 
 export default function Configuracoes() {
   const [loading, setLoading] = useState(true);
@@ -16,6 +16,7 @@ export default function Configuracoes() {
       emola: { ativo: false, numero: '' },
       mkesh: { ativo: false, numero: '' },
     },
+    pagamentosExtras: [],
   });
 
   // null = sem alteração, '' = utilizador removeu, File = novo upload
@@ -113,6 +114,31 @@ export default function Configuracoes() {
         ...f.mobileMoney,
         [provider]: { ...f.mobileMoney[provider], [key]: value },
       },
+    }));
+
+  // ---- Outras formas de pagamento (dinâmicas, criadas pelo dono) ----
+
+  const addExtra = () =>
+    setForm(f => ({
+      ...f,
+      pagamentosExtras: [
+        ...(f.pagamentosExtras ?? []),
+        { rotulo: '', valor: '', ativo: true } satisfies PagamentoExtra,
+      ],
+    }));
+
+  const updateExtra = (index: number, patch: Partial<PagamentoExtra>) =>
+    setForm(f => ({
+      ...f,
+      pagamentosExtras: (f.pagamentosExtras ?? []).map((x, i) =>
+        i === index ? { ...x, ...patch } : x,
+      ),
+    }));
+
+  const removeExtra = (index: number) =>
+    setForm(f => ({
+      ...f,
+      pagamentosExtras: (f.pagamentosExtras ?? []).filter((_, i) => i !== index),
     }));
 
   if (loading) {
@@ -287,6 +313,62 @@ export default function Configuracoes() {
             </div>
           );
         })}
+
+        {/* Outras formas de pagamento (dinâmicas — sem limite) */}
+        <div className="pt-4 border-t border-border space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="text-sm font-medium">Outras formas de pagamento</span>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Adicione quantas precisar (ex.: segunda conta M-Pesa, PayPal…) — aparecem no PDF depois das formas acima.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={addExtra}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary border border-border text-sm font-medium hover:bg-secondary/80 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Adicionar
+            </button>
+          </div>
+          {(form.pagamentosExtras ?? []).map((extra, i) => (
+            <div key={i} className="grid grid-cols-[auto_1fr_1fr_auto] gap-2 items-center pl-8">
+              <input
+                type="checkbox"
+                checked={extra.ativo}
+                onChange={e => updateExtra(i, { ativo: e.target.checked })}
+                className="w-5 h-5 rounded border-border accent-primary cursor-pointer"
+                title="Mostrar esta forma no PDF"
+              />
+              <input
+                className={inputClass}
+                placeholder="Nome (ex: M-Pesa 2, PayPal…)"
+                value={extra.rotulo}
+                onChange={e => updateExtra(i, { rotulo: e.target.value })}
+              />
+              <input
+                className={inputClass}
+                placeholder="Número / conta / email"
+                value={extra.valor}
+                onChange={e => updateExtra(i, { valor: e.target.value })}
+              />
+              <button
+                type="button"
+                onClick={() => removeExtra(i)}
+                className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                title="Remover esta forma de pagamento"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          {(form.pagamentosExtras ?? []).length === 0 && (
+            <p className="text-xs text-muted-foreground pl-8">
+              Nenhuma forma adicional — use «Adicionar» para criar.
+            </p>
+          )}
+        </div>
       </div>
 
       <button
