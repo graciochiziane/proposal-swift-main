@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import {
   Shield,
   User as UserIcon,
-  Settings,
   CreditCard,
   ShieldCheck,
   Moon,
@@ -236,10 +235,6 @@ export default function UserProfile({ compact = false }: { compact?: boolean }) 
         {/* Conta */}
         <DropdownMenuItem onClick={() => go('/configuracoes')}>
           <UserIcon className="mr-2 h-4 w-4" />
-          Meu Perfil
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => go('/configuracoes')}>
-          <Settings className="mr-2 h-4 w-4" />
           Configurações
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => soon('Plano & Faturação')}>
