@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { OrganizationService } from '@/services/organizationService';
@@ -21,7 +22,6 @@ import RoleBadge from '@/components/org/RoleBadge';
 export default function Organizacao() {
   const { organization, orgRole, hasOrgRoleMin, refreshOrg, memberships, setActiveOrganization } = useAuth();
   const [nome, setNome] = useState(organization?.nome || '');
-  const [corPrimaria, setCorPrimaria] = useState(organization?.cor_primaria || '#0B5394');
   const [saving, setSaving] = useState(false);
 
   const canEdit = hasOrgRoleMin('admin');
@@ -37,7 +37,6 @@ export default function Organizacao() {
     try {
       await OrganizationService.updateOrganization({
         nome: nome.trim(),
-        cor_primaria: corPrimaria,
       });
       toast.success('Organizacao actualizada');
       refreshOrg();
@@ -59,7 +58,6 @@ export default function Organizacao() {
   useEffect(() => {
     if (organization) {
       setNome(organization.nome || '');
-      setCorPrimaria(organization.cor_primaria || '#0B5394');
     }
   }, [organization]);
 
@@ -160,24 +158,17 @@ export default function Organizacao() {
                 />
               </div>
 
+              {/* A cor/logo que saem nos PDFs definem-se no perfil pessoal (Configurações).
+                  Nota: organizations.cor_primaria não é consumida em lado nenhum. */}
               <div className="space-y-2">
-                <Label htmlFor="org-color">Cor Primaria</Label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    id="org-color"
-                    value={corPrimaria}
-                    onChange={(e) => setCorPrimaria(e.target.value)}
-                    disabled={!canEdit}
-                    className="h-10 w-14 rounded border border-input cursor-pointer"
-                  />
-                  <Input
-                    value={corPrimaria}
-                    onChange={(e) => setCorPrimaria(e.target.value)}
-                    disabled={!canEdit}
-                    className="max-w-[140px]"
-                  />
-                </div>
+                <Label>Marca das propostas</Label>
+                <p className="text-sm text-muted-foreground">
+                  A cor e o logotipo das propostas definem-se em{' '}
+                  <Link to="/configuracoes" className="text-primary underline-offset-2 hover:underline font-medium">
+                    Configurações
+                  </Link>
+                  .
+                </p>
               </div>
 
               <div className="space-y-2">
