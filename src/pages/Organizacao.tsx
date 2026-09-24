@@ -135,7 +135,7 @@ export default function Organizacao() {
       <Tabs defaultValue="equipa" className="space-y-4">
         <TabsList>
           <TabsTrigger value="equipa">Equipa</TabsTrigger>
-          <TabsTrigger value="definicoes">Definicoes</TabsTrigger>
+          <TabsTrigger value="definicoes">Dados da Organização</TabsTrigger>
         </TabsList>
 
         <TabsContent value="equipa" className="space-y-4">
