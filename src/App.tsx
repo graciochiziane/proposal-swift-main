@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -20,7 +20,6 @@ const Propostas = lazy(() => import("@/pages/Propostas"));
 const PropostasAvancadas = lazy(() => import("@/pages/PropostasAvancadas"));
 const ResumoProposta = lazy(() => import("@/pages/ResumoProposta"));
 const GerarPropostaIA = lazy(() => import("@/pages/GerarPropostaIA"));
-const Configuracoes = lazy(() => import("@/pages/Configuracoes"));
 const Perfil = lazy(() => import("@/pages/Perfil"));
 const Organizacao = lazy(() => import("@/pages/Organizacao"));
 const Admin = lazy(() => import("@/pages/Admin"));
@@ -84,7 +83,8 @@ const App = () => (
                       <Route path="/proposta/:id" element={<ResumoProposta />} />
                       <Route path="/proposta/:id/gerar-ia" element={<GerarPropostaIA />} />
                       <Route path="/perfil" element={<Perfil />} />
-                      <Route path="/configuracoes" element={<Configuracoes />} />
+                      {/* Rota legada — os dados da empresa vivem agora na Organização */}
+                      <Route path="/configuracoes" element={<Navigate to="/organizacao" replace />} />
                       <Route path="/organizacao" element={<Organizacao />} />
                       {/* Admin routes */}
                       <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />

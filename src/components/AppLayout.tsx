@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FileText, Users, LayoutDashboard, Menu, X, Settings, Package, Building2, Sparkles, TrendingUp } from 'lucide-react';
+import { FileText, Users, LayoutDashboard, Menu, X, Package, Building2, Sparkles, TrendingUp } from 'lucide-react';
 import UserProfile from '@/components/UserProfile';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
 import { usePlanFeatures } from '@/hooks/usePlanFeatures';
 import InvitationBanner from '@/components/org/InvitationBanner';
 
-// Ordem lógica: Dashboard → Propostas → Propostas Avançadas → Clientes → Vendas/CRM → Catálogo → Configurações → Organização
+// Ordem lógica: Dashboard → Propostas → Propostas Avançadas → Clientes → Vendas/CRM → Catálogo → Organização
+// (dados da empresa e pagamentos vivem na Organização; dados pessoais em /perfil via avatar)
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Propostas', path: '/propostas', icon: FileText },
@@ -14,7 +15,6 @@ const navItems = [
   { label: 'Clientes', path: '/clientes', icon: Users },
   { label: 'Vendas', path: '/crm', icon: TrendingUp, requiresFeature: 'crm_access' as const },
   { label: 'Catálogo', path: '/catalogo', icon: Package },
-  { label: 'Configurações', path: '/configuracoes', icon: Settings },
   { label: 'Organização', path: '/organizacao', icon: Building2 },
 ];
 
