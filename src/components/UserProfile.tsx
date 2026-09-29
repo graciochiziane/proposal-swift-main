@@ -233,11 +233,11 @@ export default function UserProfile({ compact = false }: { compact?: boolean }) 
         </DropdownMenuItem>
 
         {/* Conta */}
-        <DropdownMenuItem onClick={() => go('/configuracoes')}>
+        <DropdownMenuItem onClick={() => go('/perfil')}>
           <UserIcon className="mr-2 h-4 w-4" />
-          Configurações
+          Meu Perfil
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => soon('Plano & Faturação')}>
+        <DropdownMenuItem onClick={() => go('/organizacao?tab=plano')}>
           <CreditCard className="mr-2 h-4 w-4" />
           Plano & Faturação
         </DropdownMenuItem>

@@ -21,6 +21,7 @@ const PropostasAvancadas = lazy(() => import("@/pages/PropostasAvancadas"));
 const ResumoProposta = lazy(() => import("@/pages/ResumoProposta"));
 const GerarPropostaIA = lazy(() => import("@/pages/GerarPropostaIA"));
 const Configuracoes = lazy(() => import("@/pages/Configuracoes"));
+const Perfil = lazy(() => import("@/pages/Perfil"));
 const Organizacao = lazy(() => import("@/pages/Organizacao"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const NovaPropostaAvancada = lazy(() => import("@/pages/advanced/NovaPropostaAvancada"));
@@ -82,6 +83,7 @@ const App = () => (
                       <Route path="/proposta/editar/:id" element={<CriarProposta />} />
                       <Route path="/proposta/:id" element={<ResumoProposta />} />
                       <Route path="/proposta/:id/gerar-ia" element={<GerarPropostaIA />} />
+                      <Route path="/perfil" element={<Perfil />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/organizacao" element={<Organizacao />} />
                       {/* Admin routes */}

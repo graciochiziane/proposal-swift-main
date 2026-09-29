@@ -156,5 +156,30 @@ export const ProfileService = {
       .eq('id', userData.user.id);
 
     if (error) throw error;
+  },
+
+  /**
+   * Actualiza APENAS os dados pessoais do emissor (Nome/Cargo/Contacto).
+   * Método estreito para a página /perfil — nunca toca nos campos da
+   * empresa/pagamentos, que agora pertencem à organização.
+   */
+  async updatePersonalProfile(dados: {
+    nome: string;
+    cargo: string;
+    contacto: string;
+  }): Promise<void> {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) throw new Error('Utilizador não autenticado');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        nome: dados.nome,
+        cargo: dados.cargo,
+        contacto: dados.contacto,
+      })
+      .eq('id', userData.user.id);
+
+    if (error) throw error;
   }
 };
