@@ -765,15 +765,19 @@ export type Database = {
           contact_email: string | null
           cor_primaria: string | null
           created_at: string
+          dados_bancarios: Json
+          endereco: string | null
           geracoes_ia_mes_count: number
           geracoes_ia_mes_reset_at: string
           id: string
           last_proposal_created_at: string | null
           logo_url: string | null
+          mobile_money: Json
           monthly_price: number | null
           nome: string
           notes: string | null
           nuit: string | null
+          pagamentos_extras: Json
           plano: Database["public"]["Enums"]["plan_tier"]
           propostas_mes_count: number
           propostas_mes_reset_at: string
@@ -786,15 +790,19 @@ export type Database = {
           contact_email?: string | null
           cor_primaria?: string | null
           created_at?: string
+          dados_bancarios?: Json
+          endereco?: string | null
           geracoes_ia_mes_count?: number
           geracoes_ia_mes_reset_at?: string
           id?: string
           last_proposal_created_at?: string | null
           logo_url?: string | null
+          mobile_money?: Json
           monthly_price?: number | null
           nome: string
           notes?: string | null
           nuit?: string | null
+          pagamentos_extras?: Json
           plano?: Database["public"]["Enums"]["plan_tier"]
           propostas_mes_count?: number
           propostas_mes_reset_at?: string
@@ -807,15 +815,19 @@ export type Database = {
           contact_email?: string | null
           cor_primaria?: string | null
           created_at?: string
+          dados_bancarios?: Json
+          endereco?: string | null
           geracoes_ia_mes_count?: number
           geracoes_ia_mes_reset_at?: string
           id?: string
           last_proposal_created_at?: string | null
           logo_url?: string | null
+          mobile_money?: Json
           monthly_price?: number | null
           nome?: string
           notes?: string | null
           nuit?: string | null
+          pagamentos_extras?: Json
           plano?: Database["public"]["Enums"]["plan_tier"]
           propostas_mes_count?: number
           propostas_mes_reset_at?: string
