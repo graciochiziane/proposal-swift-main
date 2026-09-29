@@ -11,7 +11,7 @@
 // ============================================================
 
 import { describe, test, expect } from 'vitest';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { jsPDF } from 'jspdf';
 import { parseMarkdown, parseInline } from '../pdf/markdown';
 import { limparTextoPdf, nomeFicheiroPdf } from '../pdf/utils';
@@ -223,6 +223,21 @@ describe('geração dos templates', () => {
     expect(doc.getNumberOfPages()).toBe(1);
   });
 
+  test('Minimal gera PDF com base64 válido para email', () => {
+    const doc = gerarPropostaPdf(AMOSTRA, 'minimal');
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
+    const blob = doc.output('blob') as Blob;
+    expect(blob.size).toBeGreaterThan(5000);
+    const base64 = pdfPropostaBase64(AMOSTRA, 'minimal');
+    expect(base64.length).toBeGreaterThan(1000);
+    expect(Buffer.from(base64, 'base64').subarray(0, 4).toString()).toBe('%PDF');
+    // o layout minimalista inclui a tabela financeira e os pressupostos no content stream
+    const raw = Buffer.from(base64, 'base64').toString('latin1');
+    expect(raw).toContain('DESCRI');
+    expect(raw).toContain('SUBTOTAL');
+    expect(raw).toContain('TOTAL');
+  });
+
   test('Doc A (narrativa sem financeiro) gera sem tabela de itens', () => {
     const docA: DadosPropostaPdf = { ...AMOSTRA, mostrarFinanceiro: false, itens: [], pagamento: undefined };
     const doc = gerarPropostaPdf(docA, 'executivo');
@@ -234,21 +249,32 @@ describe('geração dos templates', () => {
       ...AMOSTRA,
       itens: [], seccoes: [], observacoes: undefined, pagamento: undefined,
     };
-    for (const template of ['executivo', 'editorial', 'cotacao'] as const) {
+    for (const template of ['executivo', 'editorial', 'cotacao', 'minimal'] as const) {
       const doc = gerarPropostaPdf(minima, template);
       expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
     }
   });
 
-  // QA visual: PREVIEW_PDF=1 escreve os PDFs de amostra
+  // QA visual: PREVIEW_PDF=1 escreve os PDFs de amostra — se existir
+  // preview-pdf/logo-teste.png, é injectado como logótipo (valida o
+  // lugar do logo em todos os modelos)
   test.runIf(process.env.PREVIEW_PDF === '1')('exporta PDFs de amostra para QA visual', () => {
     const dir = '/home/z/my-project/preview-pdf';
     mkdirSync(dir, { recursive: true });
-    for (const template of ['executivo', 'editorial', 'cotacao'] as const) {
-      const buffer = Buffer.from(gerarPropostaPdf(AMOSTRA, template).output('arraybuffer') as ArrayBuffer);
+    let logotipo: string | undefined;
+    const caminhoLogo = `${dir}/logo-teste.png`;
+    if (existsSync(caminhoLogo)) {
+      logotipo = `data:image/png;base64,${readFileSync(caminhoLogo).toString('base64')}`;
+    }
+    for (const template of ['executivo', 'editorial', 'cotacao', 'minimal'] as const) {
+      const buffer = Buffer.from(
+        gerarPropostaPdf({ ...AMOSTRA, empresa: { ...AMOSTRA.empresa, logotipo } }, template)
+          .output('arraybuffer') as ArrayBuffer,
+      );
       writeFileSync(`${dir}/amostra-${template}.pdf`, buffer);
     }
     expect(existsSync(`${dir}/amostra-cotacao.pdf`)).toBe(true);
+    expect(existsSync(`${dir}/amostra-minimal.pdf`)).toBe(true);
   });
 });
 
@@ -264,8 +290,8 @@ describe('pagamentos extras (formas dinâmicas do dono)', () => {
     },
   };
 
-  test('os 3 modelos desenham os extras (rótulo + valor)', () => {
-    for (const template of ['executivo', 'editorial', 'cotacao'] as const) {
+  test('os 4 modelos desenham os extras (rótulo + valor)', () => {
+    for (const template of ['executivo', 'editorial', 'cotacao', 'minimal'] as const) {
       const raw = Buffer.from(
         gerarPropostaPdf(COM_EXTRAS, template).output('arraybuffer') as ArrayBuffer,
       ).toString('latin1');
@@ -293,8 +319,23 @@ describe('pagamentos extras (formas dinâmicas do dono)', () => {
     expect(raw).not.toContain('Extra 7');
   });
 
+  test('minimalista não limita extras (paridade com Executivo/Editorial)', () => {
+    const sete: DadosPropostaPdf = {
+      ...AMOSTRA,
+      pagamento: {
+        ...AMOSTRA.pagamento,
+        extras: Array.from({ length: 7 }, (_, i) => ({ rotulo: `Extra ${i + 1}`, valor: `111${i}` })),
+      },
+    };
+    const raw = Buffer.from(
+      gerarPropostaPdf(sete, 'minimal').output('arraybuffer') as ArrayBuffer,
+    ).toString('latin1');
+    expect(raw).toContain('Extra 6');
+    expect(raw).toContain('Extra 7');
+  });
+
   test('sem extras, o content stream é idêntico ao comportamento actual', () => {
-    for (const template of ['executivo', 'editorial', 'cotacao'] as const) {
+    for (const template of ['executivo', 'editorial', 'cotacao', 'minimal'] as const) {
       const raw = Buffer.from(
         gerarPropostaPdf(AMOSTRA, template).output('arraybuffer') as ArrayBuffer,
       ).toString('latin1');

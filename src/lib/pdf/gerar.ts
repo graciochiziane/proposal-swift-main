@@ -12,6 +12,7 @@ import type { DadosPropostaPdf, PdfTemplateId } from './tipos';
 import { desenharExecutivo } from './templateExecutivo';
 import { desenharEditorial } from './templateEditorial';
 import { desenharCotacao } from './templateCotacao';
+import { desenharMinimal } from './templateMinimal';
 import { nomeFicheiroPdf } from './utils';
 
 /** Gera o documento PDF (vectorial) com o template indicado */
@@ -20,7 +21,9 @@ export function gerarPropostaPdf(dados: DadosPropostaPdf, templateId: PdfTemplat
     ? desenharEditorial(dados)
     : templateId === 'cotacao'
       ? desenharCotacao(dados)
-      : desenharExecutivo(dados);
+      : templateId === 'minimal'
+        ? desenharMinimal(dados)
+        : desenharExecutivo(dados);
   return motor.doc;
 }
 

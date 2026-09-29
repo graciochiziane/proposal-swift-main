@@ -13,7 +13,7 @@ const CHAVE_DEFAULT = 'ps_pdf_template_default';
 export const TEMPLATES_PDF: PdfTemplateInfo[] = [
   {
     id: 'cotacao',
-    nome: 'Cotação Minimalista',
+    nome: 'Cotação Moderna',
     descricao:
       'Réplica do layout de referência (factura moderna): logotipo à esquerda com '
       + 'banda de título arredondada à direita, metadados em duas colunas, tabela com '
@@ -25,6 +25,22 @@ export const TEMPLATES_PDF: PdfTemplateInfo[] = [
       'Tabela de itens com cabeçalho colorido e filetes hairline',
       'TOTAL destacado em corpo maior sobre régua de acento',
       'Banda de rodapé full-bleed com email e telefone',
+    ],
+  },
+  {
+    id: 'minimal',
+    nome: 'Cotação Minimalista',
+    descricao:
+      'Minimalismo tipográfico puro: folha branca, hierarquia por tipografia e espaço '
+      + 'em branco, hairlines discretas e a cor da marca apenas em micro-acentos. '
+      + 'Logótipo no cabeçalho, todos os métodos de pagamento (incluindo formas '
+      + 'dinâmicas, sem limite) e assinaturas de emitente e cliente.',
+    caracteristicas: [
+      'Logótipo no cabeçalho com NUIT, endereço e contactos da empresa',
+      'Pagamentos completos: banco, mobile money e formas dinâmicas sem limite',
+      'Tabela em hairlines com cabeçalho discreto',
+      'TOTAL sobre régua de acento da marca',
+      'Assinaturas para emitente e cliente',
     ],
   },
   {
@@ -65,7 +81,7 @@ export function obterTemplateInfo(id: PdfTemplateId): PdfTemplateInfo {
 export function obterTemplateDefault(): PdfTemplateId {
   try {
     const guardado = localStorage.getItem(CHAVE_DEFAULT);
-    if (guardado === 'executivo' || guardado === 'editorial' || guardado === 'cotacao') return guardado;
+    if (guardado === 'executivo' || guardado === 'editorial' || guardado === 'cotacao' || guardado === 'minimal') return guardado;
   } catch { /* localStorage indisponível */ }
   return 'executivo';
 }
