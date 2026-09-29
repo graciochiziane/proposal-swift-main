@@ -189,6 +189,80 @@ function MiniaturaCotacao({ cor }: { cor: string }): JSX.Element {
   );
 }
 
+/** Miniatura CSS do modelo Minimalista (tipografia + hairlines) */
+function MiniaturaMinimal({ cor }: { cor: string }): JSX.Element {
+  return (
+    <div className="w-full aspect-[210/297] rounded-md overflow-hidden bg-white border border-border shadow-sm relative">
+      {/* cabeçalho: logo + fiscais (esq.) / metadados (dir.) */}
+      <div className="px-[8%] pt-[6%] flex items-start justify-between gap-[6%]">
+        <div className="space-y-1 pt-0.5">
+          <div className="w-4 h-4 rounded-[3px] bg-slate-800" />
+          <div className="h-1.5 w-10 bg-slate-800 rounded-sm" />
+          <div className="h-0.5 w-12 bg-slate-300 rounded-sm" />
+          <div className="h-0.5 w-10 bg-slate-200 rounded-sm" />
+        </div>
+        <div className="space-y-1 flex flex-col items-end">
+          <div className="h-0.5 w-8 bg-slate-400 rounded-sm" />
+          <div className="h-1.5 w-10 bg-slate-700 rounded-sm" />
+          <div className="h-0.5 w-7 bg-slate-400 rounded-sm" />
+          <div className="h-1 w-8 bg-slate-600 rounded-sm" />
+        </div>
+      </div>
+      {/* hairline + traço de acento + título grande */}
+      <div className="px-[8%] pt-[5%] space-y-1.5">
+        <div className="h-px w-full bg-slate-200" />
+        <div className="w-6 h-[3px] rounded-sm" style={{ background: cor }} />
+        <div className="h-3 w-2/3 bg-slate-800 rounded-sm" />
+        <div className="h-1 w-1/2 bg-slate-300 rounded-sm" />
+      </div>
+      {/* duas colunas: cliente / pagamento */}
+      <div className="px-[8%] pt-[5%] flex gap-[8%]">
+        <div className="flex-1 space-y-1">
+          <div className="h-1 w-6 rounded-sm" style={{ background: cor }} />
+          <div className="h-1.5 w-10 bg-slate-700 rounded-sm" />
+          <div className="h-1 w-9 bg-slate-300 rounded-sm" />
+          <div className="h-1 w-7 bg-slate-200 rounded-sm" />
+        </div>
+        <div className="flex-1 space-y-1">
+          <div className="h-1 w-9 rounded-sm" style={{ background: cor }} />
+          <div className="h-1.5 w-8 bg-slate-700 rounded-sm" />
+          <div className="h-1 w-7 bg-slate-300 rounded-sm" />
+        </div>
+      </div>
+      {/* tabela em hairlines */}
+      <div className="px-[8%] pt-[5%] space-y-1">
+        <div className="h-1 w-9 bg-slate-400 rounded-sm" />
+        <div className="h-px w-full bg-slate-200" />
+        <div className="h-1.5 w-full bg-slate-100 rounded-sm" />
+        <div className="h-px w-full bg-slate-200" />
+        <div className="h-1.5 w-5/6 bg-slate-100 rounded-sm" />
+        <div className="h-px w-full bg-slate-200" />
+        <div className="h-1.5 w-2/3 bg-slate-100 rounded-sm" />
+      </div>
+      {/* totais com régua de acento */}
+      <div className="px-[8%] pt-[6%] flex justify-end">
+        <div className="w-[36%] space-y-1.5">
+          <div className="h-1 w-full bg-slate-200 rounded-sm" />
+          <div className="h-1 w-4/5 bg-slate-200 rounded-sm" />
+          <div className="h-[2px] w-full" style={{ background: cor }} />
+          <div className="h-2.5 w-full rounded-sm bg-slate-800" />
+        </div>
+      </div>
+      {/* assinaturas */}
+      <div className="px-[8%] pt-[7%] flex justify-between">
+        <div className="space-y-1">
+          <div className="h-0.5 w-8 bg-slate-300 rounded-sm" />
+          <div className="h-px w-16 bg-slate-300" />
+        </div>
+        <div className="space-y-1">
+          <div className="h-0.5 w-8 bg-slate-300 rounded-sm" />
+          <div className="h-px w-16 bg-slate-300" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TemplateManager() {
   const [templateDefault, setTemplateDefault] = useState<PdfTemplateId>(obterTemplateDefault());
 
@@ -209,9 +283,9 @@ export default function TemplateManager() {
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {TEMPLATES_PDF.map(template => {
-          const cor = template.id === 'editorial' ? '#8A6D3B' : template.id === 'cotacao' ? '#F97316' : '#1F4E79';
+          const cor = template.id === 'editorial' ? '#8A6D3B' : template.id === 'cotacao' ? '#F97316' : template.id === 'minimal' ? '#0F172A' : '#1F4E79';
           const activo = templateDefault === template.id;
           return (
             <Card
@@ -224,7 +298,9 @@ export default function TemplateManager() {
                     ? <MiniaturaEditorial cor={cor} />
                     : template.id === 'cotacao'
                       ? <MiniaturaCotacao cor={cor} />
-                      : <MiniaturaExecutivo cor={cor} />}
+                      : template.id === 'minimal'
+                        ? <MiniaturaMinimal cor={cor} />
+                        : <MiniaturaExecutivo cor={cor} />}
                 </div>
 
                 <div className="space-y-2">
@@ -266,7 +342,7 @@ export default function TemplateManager() {
       <div className="rounded-xl border bg-secondary/40 p-5 text-sm text-muted-foreground space-y-2">
         <p className="font-semibold text-foreground">Como funciona</p>
         <p>
-          Cada modelo deriva a paleta da cor primária definida nas Configurações (marca da empresa) e inclui
+          Cada modelo deriva a paleta da cor primária definida na Organização (marca da empresa) e inclui
           logotipo, dados do cliente e emitente, tabela de itens com totais, cronograma, observações, dados de
           pagamento e áreas de assinatura.
         </p>
