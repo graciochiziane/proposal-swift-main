@@ -1,14 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
-import { OrganizationService } from '@/services/organizationService';
-import { Building2, Save, Loader2, ArrowRightLeft, Check } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Building2, ArrowRightLeft, Check } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -16,36 +11,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import MemberList from '@/components/org/MemberList';
 import RoleBadge from '@/components/org/RoleBadge';
+import EmpresaPerfilTab from '@/components/org/EmpresaPerfilTab';
+import PagamentosTab from '@/components/org/PagamentosTab';
+import PlanoTab from '@/components/org/PlanoTab';
+
+// Ordem lógica: Perfil da Empresa → Pagamentos → Equipa → Plano
+const ABAS_VALIDAS = ['perfil', 'pagamentos', 'equipa', 'plano'] as const;
 
 export default function Organizacao() {
-  const { organization, orgRole, hasOrgRoleMin, refreshOrg, memberships, setActiveOrganization } = useAuth();
-  const [nome, setNome] = useState(organization?.nome || '');
-  const [saving, setSaving] = useState(false);
+  const { organization, orgRole, hasOrgRoleMin, memberships, setActiveOrganization } = useAuth();
+  const [searchParams] = useSearchParams();
+
+  // Permite entrar directamente numa aba: /organizacao?tab=plano
+  const tabParam = searchParams.get('tab');
+  const abaInicial = (ABAS_VALIDAS as readonly string[]).includes(tabParam ?? '')
+    ? (tabParam as typeof ABAS_VALIDAS[number])
+    : 'perfil';
 
   const canEdit = hasOrgRoleMin('admin');
   const hasMultipleOrgs = (memberships?.length ?? 0) > 1;
-
-  const handleSave = async () => {
-    if (!nome.trim()) {
-      toast.error('Nome da organizacao e obrigatorio');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await OrganizationService.updateOrganization({
-        nome: nome.trim(),
-      });
-      toast.success('Organizacao actualizada');
-      refreshOrg();
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao actualizar');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleSwitchOrg = (orgId: string) => {
     if (orgId === organization?.id) return;
@@ -53,13 +40,6 @@ export default function Organizacao() {
     setActiveOrganization(orgId);
     toast.success(`Org activa: ${target?.organization.nome || 'Organizacao'}`);
   };
-
-  // Sync form state when organization data changes from server (e.g. after refresh)
-  useEffect(() => {
-    if (organization) {
-      setNome(organization.nome || '');
-    }
-  }, [organization]);
 
   if (!organization) {
     return (
@@ -132,77 +112,28 @@ export default function Organizacao() {
         </Card>
       )}
 
-      <Tabs defaultValue="equipa" className="space-y-4">
-        <TabsList>
+      <Tabs defaultValue={abaInicial} className="space-y-4">
+        <TabsList className="flex flex-wrap h-auto gap-1">
+          <TabsTrigger value="perfil">Perfil da Empresa</TabsTrigger>
+          <TabsTrigger value="pagamentos">Métodos de Pagamento</TabsTrigger>
           <TabsTrigger value="equipa">Equipa</TabsTrigger>
-          <TabsTrigger value="definicoes">Dados da Organização</TabsTrigger>
+          <TabsTrigger value="plano">Plano &amp; Faturação</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="perfil" className="space-y-4">
+          <EmpresaPerfilTab canEdit={canEdit} />
+        </TabsContent>
+
+        <TabsContent value="pagamentos" className="space-y-4">
+          <PagamentosTab canEdit={canEdit} />
+        </TabsContent>
 
         <TabsContent value="equipa" className="space-y-4">
           <MemberList />
         </TabsContent>
 
-        <TabsContent value="definicoes" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Dados da Organizacao</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="org-name">Nome</Label>
-                <Input
-                  id="org-name"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  disabled={!canEdit}
-                />
-              </div>
-
-              {/* A cor/logo que saem nos PDFs definem-se no perfil pessoal (Configurações).
-                  Nota: organizations.cor_primaria não é consumida em lado nenhum. */}
-              <div className="space-y-2">
-                <Label>Marca das propostas</Label>
-                <p className="text-sm text-muted-foreground">
-                  A cor e o logotipo das propostas definem-se em{' '}
-                  <Link to="/configuracoes" className="text-primary underline-offset-2 hover:underline font-medium">
-                    Configurações
-                  </Link>
-                  .
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Identificador</Label>
-                <p className="text-sm text-muted-foreground font-mono">{organization.slug}</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Plano</Label>
-                <p className="text-sm text-muted-foreground capitalize">{organization.plano}</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Membro desde</Label>
-                <p className="text-sm text-muted-foreground">
-                  {new Date(organization.created_at).toLocaleDateString('pt-MZ', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
-                </p>
-              </div>
-
-              {canEdit && (
-                <div className="pt-2">
-                  <Button onClick={handleSave} disabled={saving}>
-                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    <Save className="h-4 w-4 mr-2" />
-                    Guardar
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="plano" className="space-y-4">
+          <PlanoTab />
         </TabsContent>
       </Tabs>
     </div>
