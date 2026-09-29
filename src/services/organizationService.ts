@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { Tables } from '@/integrations/supabase/types';
+import type { Tables, Json } from '@/integrations/supabase/types';
+import type { DonoProposta } from '@/types';
 
 // ── Types ──
 // Nota: no types.ts regenerado (M4), Tables<'X'> devolve directamente o tipo Row.
@@ -35,8 +36,9 @@ export const OrganizationService = {
   },
 
   /**
-   * Actualiza dados da organização (nome, logo, cor).
-   * Requer role owner ou admin.
+   * Actualiza dados da organização (nome, logo, cor, dados fiscais,
+   * métodos de pagamento).
+   * Requer role owner ou admin (RLS org_update_owner_admin).
    * @param orgId ID da organização a actualizar (se null, usa a activa do contexto)
    */
   async updateOrganization(
@@ -44,6 +46,11 @@ export const OrganizationService = {
       nome?: string;
       logo_url?: string | null;
       cor_primaria?: string;
+      nuit?: string | null;
+      endereco?: string | null;
+      dados_bancarios?: DonoProposta['dadosBancarios'];
+      mobile_money?: DonoProposta['mobileMoney'];
+      pagamentos_extras?: DonoProposta['pagamentosExtras'];
     },
     orgId?: string | null
   ): Promise<void> {
@@ -52,8 +59,102 @@ export const OrganizationService = {
 
     const { error } = await supabase
       .from('organizations')
-      .update(updates)
+      .update({
+        nome: updates.nome,
+        logo_url: updates.logo_url,
+        cor_primaria: updates.cor_primaria,
+        nuit: updates.nuit,
+        endereco: updates.endereco,
+        // Cast documentado: fronteira domínio (tipado) -> Json da coluna
+        dados_bancarios: updates.dados_bancarios as Json | undefined,
+        mobile_money: updates.mobile_money as unknown as Json | undefined,
+        pagamentos_extras: updates.pagamentos_extras as unknown as Json | undefined,
+      })
       .eq('id', resolvedOrgId);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Gera signed URL para o logo da organização.
+   * formats aceites em organizations.logo_url:
+   *   - http(s)://... → usado como-is
+   *   - {org_id}/{filename} → path completo do bucket 'logos'
+   *   - {filename}      → prefixa com o org_id
+   * Retorna '' quando não há logo ou a assinatura falha.
+   */
+  async signOrgLogoUrl(logoUrl: string | null | undefined, orgId: string): Promise<string> {
+    if (!logoUrl) return '';
+    if (logoUrl.startsWith('http')) return logoUrl;
+
+    const path = logoUrl.includes('/') ? logoUrl : `${orgId}/${logoUrl}`;
+    const { data: signed, error } = await supabase.storage
+      .from('logos')
+      .createSignedUrl(path, 3600);
+
+    if (error || !signed) {
+      console.warn('Falha ao gerar signed URL para logo da org:', error);
+      return '';
+    }
+    return signed.signedUrl;
+  },
+
+  /**
+   * Faz upload do logótipo da ORGANIZAÇÃO para logos/{orgId}/…
+   * (storage RLS org-aware: admin+ pode escrever, membros leem).
+   * Remove apenas o ficheiro anterior SE pertencer à pasta da org —
+   * logos legacy ({user_id}/…) nunca são apagados (podem ainda estar
+   * referenciados pelo perfil pessoal como fallback).
+   * Devolve o path completo para gravar em organizations.logo_url.
+   */
+  async uploadOrgLogo(file: File, orgId: string): Promise<string> {
+    // 1. Buscar logo actual da org
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('logo_url')
+      .eq('id', orgId)
+      .single();
+
+    const previous = org?.logo_url;
+    if (previous && previous.includes('/') && previous.startsWith(`${orgId}/`)) {
+      await supabase.storage.from('logos').remove([previous]);
+      // Ignorar erro — ficheiro pode já não existir
+    }
+
+    // 2. Upload do novo ficheiro na pasta da org
+    const fileExt = file.name.split('.').pop();
+    const filePath = `${orgId}/logo-${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('logos')
+      .upload(filePath, file, { upsert: false });
+
+    if (uploadError) throw uploadError;
+
+    return filePath;
+  },
+
+  /**
+   * Remove o logótipo da organização (ficheiro + referência).
+   * Só apaga ficheiros na pasta da própria org (legado pessoal intacto).
+   */
+  async removeOrgLogo(orgId: string): Promise<void> {
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('logo_url')
+      .eq('id', orgId)
+      .single();
+
+    const current = org?.logo_url;
+    if (current && current.includes('/') && current.startsWith(`${orgId}/`)) {
+      await supabase.storage.from('logos').remove([current]);
+      // Ignorar erro — ficheiro pode já não existir
+    }
+
+    const { error } = await supabase
+      .from('organizations')
+      .update({ logo_url: null })
+      .eq('id', orgId);
 
     if (error) throw error;
   },

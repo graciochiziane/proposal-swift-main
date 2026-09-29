@@ -27,7 +27,7 @@ import {
 } from '@/lib/advanced';
 import { converterDocumentoAvancado, previsualizarPdf, baixarPropostaPdf, obterTemplateDefault } from '@/lib/pdf';
 import { useAuth } from '@/hooks/useAuth';
-import { ProfileService } from '@/services/profileService';
+import { IssuerService } from '@/services/issuerService';
 import { ClienteService } from '@/services/clienteService';
 
 export default function RevisaoProposta() {
@@ -95,7 +95,7 @@ export default function RevisaoProposta() {
   const [clientInfo, setClientInfo] = useState<{ name: string; company: string; email: string; phone: string }>({ name: '', company: '', email: '', phone: '' });
 
   useEffect(() => {
-    ProfileService.getProfile().then(profile => {
+    IssuerService.getIssuer().then(profile => {
       if (profile) {
         setCompanyProfile({
           nome: profile.nome, empresa: profile.empresa, contacto: profile.contacto,

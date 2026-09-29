@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, Fragment, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
-import { ProfileService } from '@/services/profileService';
+import { IssuerService } from '@/services/issuerService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
 import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateDefault, definirTemplateDefault, TEMPLATES_PDF } from '@/lib/pdf';
 import type { PdfTemplateId } from '@/lib/pdf';
@@ -65,7 +65,7 @@ export default function GerarPropostaIA() {
       try {
         const [propData, donoData] = await Promise.all([
           PropostaService.getPropostaById(id as string),
-          ProfileService.getProfile(),
+          IssuerService.getIssuer(),
         ]);
         setProposta(propData);
         setDono(donoData);

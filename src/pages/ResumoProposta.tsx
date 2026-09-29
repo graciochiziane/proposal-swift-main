@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
-import { ProfileService } from '@/services/profileService';
+import { IssuerService } from '@/services/issuerService';
 import { calcularTotal } from '@/lib/calculos';
 import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf } from '@/lib/pdf';
 import type { PdfTemplateId } from '@/lib/pdf';
@@ -48,7 +48,7 @@ export default function ResumoProposta() {
       try {
         const [propData, donoData] = await Promise.all([
           PropostaService.getPropostaById(id as string),
-          ProfileService.getProfile(),
+          IssuerService.getIssuer(),
         ]);
         setProposta(propData);
         setDono(donoData);
