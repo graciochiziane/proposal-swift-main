@@ -3,12 +3,13 @@
 // Each tab is an isolated component in ./admin/
 // ============================================================
 import { useState, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Activity, Users, Building2, Shield } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Activity, Users, Building2, Shield, LayoutTemplate } from 'lucide-react';
 import { MetricsTab } from './admin/MetricsTab';
 import { UsersTab } from './admin/UsersTab';
 import { TenantsTab } from './admin/TenantsTab';
@@ -17,6 +18,7 @@ import { useAdminTenants } from './admin/hooks/useAdminTenants';
 
 export default function Admin() {
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [checkingRole, setCheckingRole] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState('metrics');
@@ -49,9 +51,16 @@ export default function Admin() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Painel SuperAdmin</h1>
-        <p className="text-sm text-muted-foreground">Gestão global e métricas da plataforma</p>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Painel SuperAdmin</h1>
+          <p className="text-sm text-muted-foreground">Gestão global e métricas da plataforma</p>
+        </div>
+        {/* Galeria de modelos PDF — única entrada para /admin/templates */}
+        <Button variant="outline" size="sm" onClick={() => navigate('/admin/templates')} className="gap-2">
+          <LayoutTemplate className="h-4 w-4" />
+          Modelos PDF
+        </Button>
       </div>
 
       {/* Tabs */}
