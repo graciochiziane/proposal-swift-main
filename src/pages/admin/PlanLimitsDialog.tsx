@@ -19,6 +19,17 @@ interface PlanRow {
 
 type PlanTier = 'free' | 'pro' | 'business';
 
+// admin_audit_log.target_id é UUID NOT NULL, mas plan_limits é identificada
+// pela PK textual (plano). Este mapa garante UUIDs válidos e determinísticos
+// por plano — antes, o insert de auditoria falhava com erro de cast
+// ("invalid input syntax for type uuid") e o try/catch engolia o erro,
+// pelo que nenhuma alteração de limites ficava registada.
+const PLAN_AUDIT_UUID: Record<string, string> = {
+  free: '00000000-0000-4000-8000-0000000000f1',
+  pro: '00000000-0000-4000-8000-0000000000f2',
+  business: '00000000-0000-4000-8000-0000000000f3',
+};
+
 export function PlanLimitsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [saving, setSaving] = useState(false);
@@ -48,8 +59,9 @@ export function PlanLimitsDialog({ open, onOpenChange }: { open: boolean; onOpen
             admin_id: adminId,
             action: 'plan_limits_update',
             target_table: 'plan_limits',
-            // plan_limits é identificada pela PK plano (target_id NOT NULL)
-            target_id: p.plano,
+            // plan_limits é identificada pela PK plano — usamos UUID
+            // determinístico por plano (target_id é UUID NOT NULL)
+            target_id: PLAN_AUDIT_UUID[p.plano],
             target_snapshot: { plano: p.plano, before, after: { propostas_mes: p.propostas_mes, geracoes_ia_mes: p.geracoes_ia_mes, clientes_max: p.clientes_max } },
           });
         } catch { /* non-blocking */ }
