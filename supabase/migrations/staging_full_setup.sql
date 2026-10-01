@@ -4,6 +4,35 @@
 -- Idempotent: safe to re-run on a fresh or existing database.
 -- All CREATE OR REPLACE / IF NOT EXISTS / DO $$ EXCEPTION used.
 --
+-- SYNC 2026-10-01 (sistema de planos/features):
+--   Consolidado neste script, com paridade com as migrações:
+--   - plan_features: tabela + seed + RLS + helpers + RPC
+--     upsert_plan_feature (20260813150000 + seed crm_access 20261001000000)
+--   - plan_limits: RLS UPDATE para admin (20260725120000)
+--   - organizations.suspended_at: coluna exigida pelos triggers
+--     de enforcement (20260725130000, apenas a coluna)
+--   - enforce_client_limit + enforce_ia_generation_limit
+--     (20260814130000)
+--   - enforce_proposal_limit: versão org-aware corrigida
+--     (NEW.organization_id em vez de user_org_id — 20260708010000)
+--   - geracoes_ia_mes: seeds staging (free=3, pro=50) são
+--     INTENCIONALMENTE mais apertados que a default de produção
+--     (2147483647) para permitir testar enforcement em staging;
+--     valores são dados de runtime ajustáveis via Gestão de Planos.
+--
+-- KNOWN GAPS (ainda NÃO consolidados — diferenças conhecidas
+-- face às migrações; não bloqueiam o teste do sistema de planos):
+--   - Módulo CRM completo (20260814100000) + RLS org_has_crm_access
+--     (20260903000000) — sem tabelas CRM não há o que proteger
+--   - RPCs admin: admin_toggle_suspend, admin_platform_metrics,
+--     organization_health_score, admin_remove_member
+--   - RLS org-scoped reescritas (20260707010000/20260708000000):
+--     user_belongs_to_org/user_role_in_org/has_org_role_min_in_org
+--   - RLS block_suspended_org completa (20260725130000, só a
+--     coluna foi consolidada)
+--   - Advanced proposals / blueprint engine (20260807000000)
+--   - pdf_templates HTML (20260814150000)
+--
 -- ORDER:
 --   1. Types / Enums
 --   2. Utility Functions
@@ -426,6 +455,58 @@ ALTER TABLE public.plan_limits
 UPDATE public.plan_limits SET geracoes_ia_mes = 3 WHERE plano = 'free' AND geracoes_ia_mes IS NULL;
 UPDATE public.plan_limits SET geracoes_ia_mes = 50 WHERE plano = 'pro' AND geracoes_ia_mes IS NULL;
 UPDATE public.plan_limits SET geracoes_ia_mes = 2147483647 WHERE plano = 'business' AND geracoes_ia_mes IS NULL;
+
+
+-- 3d-2. PLAN FEATURES (feature flags por plano)
+-- Mirrors 20260813150000 + seed crm_access (20261001000000).
+-- Cada par (plano, feature_key) define se uma feature está activa
+-- e o seu limite (NULL = ilimitado).
+CREATE TABLE IF NOT EXISTS public.plan_features (
+    plano public.plan_tier NOT NULL,
+    feature_key TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT false,
+    limit_value INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT plan_features_pkey PRIMARY KEY (plano, feature_key),
+    CONSTRAINT plan_features_feature_key_check CHECK (
+        feature_key ~ '^[a-z][a-z0-9_]*$'
+        AND length(feature_key) BETWEEN 3 AND 50
+    )
+);
+
+CREATE INDEX IF NOT EXISTS plan_features_plano_idx
+    ON public.plan_features(plano) WHERE enabled = true;
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_plan_features_updated_at
+    BEFORE UPDATE ON public.plan_features
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Seed: features conhecidas. ON CONFLICT DO NOTHING preserva
+-- alterações feitas pelo admin via Gestão de Features.
+INSERT INTO public.plan_features (plano, feature_key, enabled, limit_value) VALUES
+    ('free',      'advanced_proposals', true,  NULL),
+    ('pro',       'advanced_proposals', true,  NULL),
+    ('business',  'advanced_proposals', true,  NULL),
+    ('free',      'custom_branding',    false, NULL),
+    ('pro',       'custom_branding',    true,  NULL),
+    ('business',  'custom_branding',    true,  NULL),
+    ('free',      'multi_user',         true,  3),
+    ('pro',       'multi_user',         true,  10),
+    ('business',  'multi_user',         true,  NULL),
+    ('free',      'api_access',         false, NULL),
+    ('pro',       'api_access',         false, NULL),
+    ('business',  'api_access',         true,  NULL),
+    ('free',      'pdf_export',         true,  NULL),
+    ('pro',       'pdf_export',         true,  NULL),
+    ('business',  'pdf_export',         true,  NULL),
+    ('free',      'crm_access',         false, NULL),
+    ('pro',       'crm_access',         false, NULL),
+    ('business',  'crm_access',         true,  NULL)
+ON CONFLICT (plano, feature_key) DO NOTHING;
 
 
 -- 3e. CLIENTS
@@ -868,6 +949,48 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- 4k-2. plan_limits: admin UPDATE (Gestão de Planos)
+-- Mirrors 20260725120000 — permite ao Super Admin editar limites.
+DO $$ BEGIN
+  CREATE POLICY "plan_limits_admin_update" ON public.plan_limits
+    FOR UPDATE TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4k-3. plan_features RLS: leitura para todos authenticated,
+--       escrita apenas platform admins (mirrors 20260813150000)
+ALTER TABLE public.plan_features ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "plan_features_select_all" ON public.plan_features
+    FOR SELECT TO authenticated USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "plan_features_insert_admin" ON public.plan_features
+    FOR INSERT TO authenticated
+    WITH CHECK (public.has_role(auth.uid(), 'admin'::public.app_role));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "plan_features_update_admin" ON public.plan_features
+    FOR UPDATE TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'::public.app_role))
+    WITH CHECK (public.has_role(auth.uid(), 'admin'::public.app_role));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "plan_features_delete_admin" ON public.plan_features
+    FOR DELETE TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'::public.app_role));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- 4l. proposta_ai policies
 -- NOTE: Both are DROPPED in SECTION 9 and replaced by org-aware versions.
 DO $$ BEGIN
@@ -1107,6 +1230,13 @@ CREATE TABLE IF NOT EXISTS public.organizations (
 );
 CREATE INDEX IF NOT EXISTS idx_orgs_slug ON public.organizations(slug);
 
+-- Added by block_suspended_org migration (20260725130000) — apenas a
+-- coluna, exigida pelos triggers de enforcement (SECTION 10d/10e);
+-- a RLS completa dessa migration ainda não está consolidada (ver KNOWN GAPS).
+-- NULL = não suspensa: sem alteração de comportamento por si.
+ALTER TABLE public.organizations
+  ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ;
+
 DROP TRIGGER IF EXISTS trg_organizations_updated_at ON public.organizations;
 CREATE TRIGGER trg_organizations_updated_at BEFORE UPDATE ON public.organizations
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
@@ -1306,6 +1436,91 @@ AS $$
   WHERE organization_id = _org_id
   AND created_at >= date_trunc('month', now())
 $$;
+
+
+-- 7f. has_plan_feature — verifica se um plano tem uma feature activa
+--     (mirrors 20260813150000; usada por gates de features na BD)
+CREATE OR REPLACE FUNCTION public.has_plan_feature(
+    p_plano public.plan_tier,
+    p_feature_key TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = 'public'
+AS $function$
+    SELECT EXISTS (
+        SELECT 1 FROM public.plan_features
+        WHERE plano = p_plano
+          AND feature_key = p_feature_key
+          AND enabled = true
+    )
+$function$;
+
+-- 7g. get_plan_feature_limit — limit_value de uma feature por plano
+--     (NULL = ilimitado, feature inactiva ou inexistente)
+CREATE OR REPLACE FUNCTION public.get_plan_feature_limit(
+    p_plano public.plan_tier,
+    p_feature_key TEXT
+)
+RETURNS INTEGER
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = 'public'
+AS $function$
+    SELECT limit_value FROM public.plan_features
+    WHERE plano = p_plano
+      AND feature_key = p_feature_key
+      AND enabled = true
+$function$;
+
+-- 7h. get_plan_features — RPC lida pelo frontend (usePlanFeatures)
+CREATE OR REPLACE FUNCTION public.get_plan_features(p_plano public.plan_tier)
+RETURNS TABLE(
+    feature_key TEXT,
+    enabled BOOLEAN,
+    limit_value INTEGER
+)
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = 'public'
+AS $function$
+    SELECT feature_key, enabled, limit_value
+    FROM public.plan_features
+    WHERE plano = p_plano
+    ORDER BY feature_key
+$function$;
+
+-- 7i. upsert_plan_feature — RPC de escrita do Super Admin
+--     (Gestão de Features por Plano). SECURITY DEFINER + has_role.
+CREATE OR REPLACE FUNCTION public.upsert_plan_feature(
+    p_plano public.plan_tier,
+    p_feature_key TEXT,
+    p_enabled BOOLEAN,
+    p_limit_value INTEGER DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+    IF NOT public.has_role(auth.uid(), 'admin'::public.app_role) THEN
+        RAISE EXCEPTION 'Acesso negado: apenas admins de plataforma';
+    END IF;
+
+    INSERT INTO public.plan_features (plano, feature_key, enabled, limit_value)
+    VALUES (p_plano, p_feature_key, p_enabled, p_limit_value)
+    ON CONFLICT (plano, feature_key)
+    DO UPDATE SET
+        enabled = p_enabled,
+        limit_value = p_limit_value,
+        updated_at = now();
+END;
+$$;
+
+-- Escrita apenas para authenticated admin (revoga PUBLIC/anon)
+REVOKE EXECUTE ON FUNCTION public.upsert_plan_feature(public.plan_tier, TEXT, BOOLEAN, INTEGER) FROM PUBLIC, anon;
 
 
 -- ============================================================
@@ -1653,8 +1868,10 @@ END $$;
 -- use the latest function body.
 
 -- 10a. REPLACE: enforce_proposal_limit (org-aware)
---     If user has org → count per org.
---     If no org → fallback to per-user count.
+--     Mirrors 20260708010000: usa NEW.organization_id directamente
+--     em vez de user_org_id(NEW.owner_id) — que devolvia uma org
+--     arbitrária para utilizadores multi-org (BUG 1 original).
+--     Se tem org → conta por org. Sem org → fallback por utilizador.
 CREATE OR REPLACE FUNCTION public.enforce_proposal_limit()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -1668,7 +1885,7 @@ DECLARE
   v_reset TIMESTAMPTZ;
   v_limit INT;
 BEGIN
-  v_org_id := user_org_id(NEW.owner_id);
+  v_org_id := NEW.organization_id;
 
   IF v_org_id IS NOT NULL THEN
     -- Count per organization
@@ -1677,7 +1894,7 @@ BEGIN
     FROM public.organizations WHERE id = v_org_id FOR UPDATE;
 
     IF v_plano IS NULL THEN
-      RAISE EXCEPTION 'Organization not found for user %', NEW.owner_id;
+      RAISE EXCEPTION 'Organization not found for proposal';
     END IF;
 
     IF now() >= v_reset THEN
@@ -1696,8 +1913,7 @@ BEGIN
         propostas_mes_reset_at = v_reset
     WHERE id = v_org_id;
 
-    -- Sync organization_id on the proposal
-    NEW.organization_id := v_org_id;
+    -- NÃO reescrever NEW.organization_id — usar o valor do frontend
 
   ELSE
     -- Fallback: count per user (no org)
@@ -1789,6 +2005,135 @@ BEGIN
     UPDATE public.subscriptions SET plano = 'business'::public.plan_tier WHERE user_id = v_uid;
   END IF;
 END $$;
+
+
+-- 10d. ADD: enforce_client_limit (mirrors 20260814130000)
+--      Trigger BEFORE INSERT on clients — valida limite de clientes
+--      do plano (plan_limits.clientes_max) no momento do INSERT.
+CREATE OR REPLACE FUNCTION public.enforce_client_limit()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_org_id UUID;
+  v_plano public.plan_tier;
+  v_clientes_max INTEGER;
+  v_current_count INTEGER;
+BEGIN
+  -- Determinar org_id (pode vir de organization_id ou owner_id legacy)
+  IF NEW.organization_id IS NOT NULL THEN
+    v_org_id := NEW.organization_id;
+  ELSE
+    -- Solo user: sem limite de clientes
+    RETURN NEW;
+  END IF;
+
+  -- Buscar plano da org e limite
+  SELECT o.plano INTO v_plano
+  FROM public.organizations o
+  WHERE o.id = v_org_id AND o.suspended_at IS NULL;
+
+  IF v_plano IS NULL THEN
+    RAISE EXCEPTION 'Organização não encontrada ou suspensa';
+  END IF;
+
+  -- Buscar limite de clientes
+  SELECT clientes_max INTO v_clientes_max
+  FROM public.plan_limits
+  WHERE plano = v_plano;
+
+  -- Se clientes_max é NULL (ilimitado), permitir
+  IF v_clientes_max IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- Contar clientes actuais da org
+  SELECT COUNT(*) INTO v_current_count
+  FROM public.clients
+  WHERE organization_id = v_org_id;
+
+  IF v_current_count >= v_clientes_max THEN
+    RAISE EXCEPTION 'Limite de clientes atingido (%) para o plano %',
+      v_clientes_max, v_plano;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_client_limit ON public.clients;
+CREATE TRIGGER trg_enforce_client_limit
+  BEFORE INSERT ON public.clients
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_client_limit();
+
+-- 10e. ADD: enforce_ia_generation_limit (mirrors 20260814130000)
+--      Trigger BEFORE INSERT on proposta_ai — valida limite de
+--      gerações IA mensais por org (plan_limits.geracoes_ia_mes).
+CREATE OR REPLACE FUNCTION public.enforce_ia_generation_limit()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_org_id UUID;
+  v_plano public.plan_tier;
+  v_ia_limit INTEGER;
+  v_current_count INTEGER;
+BEGIN
+  -- Determinar org_id
+  IF NEW.organization_id IS NOT NULL THEN
+    v_org_id := NEW.organization_id;
+  ELSE
+    -- Fallback: buscar via user_id (legacy single-tenant)
+    SELECT organization_id INTO v_org_id
+    FROM public.profiles WHERE id = NEW.user_id;
+    IF v_org_id IS NULL THEN
+      RETURN NEW; -- não consegue determinar org, permitir
+    END IF;
+  END IF;
+
+  -- Buscar plano da org
+  SELECT o.plano INTO v_plano
+  FROM public.organizations o
+  WHERE o.id = v_org_id AND o.suspended_at IS NULL;
+
+  IF v_plano IS NULL THEN
+    RAISE EXCEPTION 'Organização não encontrada ou suspensa';
+  END IF;
+
+  -- Buscar limite de IA
+  SELECT geracoes_ia_mes INTO v_ia_limit
+  FROM public.plan_limits
+  WHERE plano = v_plano;
+
+  -- Se ilimitado, permitir
+  IF v_ia_limit IS NULL OR v_ia_limit >= 2147483647 THEN
+    RETURN NEW;
+  END IF;
+
+  -- Contar gerações IA este mês para a org
+  SELECT COUNT(*) INTO v_current_count
+  FROM public.proposta_ai
+  WHERE organization_id = v_org_id
+    AND EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM now())
+    AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM now());
+
+  IF v_current_count >= v_ia_limit THEN
+    RAISE EXCEPTION 'Limite de gerações IA mensais atingido (%) para o plano %',
+      v_ia_limit, v_plano;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_ia_generation_limit ON public.proposta_ai;
+CREATE TRIGGER trg_enforce_ia_generation_limit
+  BEFORE INSERT ON public.proposta_ai
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_ia_generation_limit();
 
 
 -- ============================================================
