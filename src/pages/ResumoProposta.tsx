@@ -4,7 +4,7 @@ import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import { IssuerService } from '@/services/issuerService';
 import { calcularTotal } from '@/lib/calculos';
-import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf } from '@/lib/pdf';
+import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf, resolverLogotipoParaPdf } from '@/lib/pdf';
 import type { PdfTemplateId } from '@/lib/pdf';
 import { propostaEmailService } from '@/services/propostaEmailService';
 import { CrmService } from '@/services/crmService';
@@ -92,7 +92,7 @@ export default function ResumoProposta() {
    * mode 'preview' abre numa nova janela; mode 'download'
    * descarrega o ficheiro .pdf (pronto a enviar ao cliente).
    */
-  const handleGerarPdf = (mode: 'preview' | 'download') => {
+  const handleGerarPdf = async (mode: 'preview' | 'download') => {
     if (!proposta || !dono || !cliente) {
       toast.error('Dados não carregados');
       return;
@@ -100,7 +100,9 @@ export default function ResumoProposta() {
 
     setGeneratingPdf(true);
     try {
-      const dados = construirDadosPdf(proposta, cliente, dono);
+      // o logotipo chega como URL assinada do Storage — resolver para
+      // data URL antes de gerar (falha → fallback do nome da empresa)
+      const dados = await resolverLogotipoParaPdf(construirDadosPdf(proposta, cliente, dono));
       if (mode === 'download') {
         baixarPropostaPdf(dados, templateId);
         toast.success('Proposta PDF gerada com sucesso');

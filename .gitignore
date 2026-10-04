@@ -40,5 +40,8 @@ bun.lockb
 # Test coverage output (M18 — added 2026-08-26)
 coverage/
 
+# TypeScript incremental build artifacts
+*.tsbuildinfo
+
 # Supabase CLI artifacts
 supabase/.temp/

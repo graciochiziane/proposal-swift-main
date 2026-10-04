@@ -25,7 +25,7 @@ import { generateSectionContent, generateAllSections } from '@/services/proposta
 import {
   buildProposalDocument,
 } from '@/lib/advanced';
-import { converterDocumentoAvancado, previsualizarPdf, baixarPropostaPdf, obterTemplateDefault } from '@/lib/pdf';
+import { converterDocumentoAvancado, previsualizarPdf, baixarPropostaPdf, obterTemplateDefault, resolverLogotipoParaPdf } from '@/lib/pdf';
 import { useAuth } from '@/hooks/useAuth';
 import { IssuerService } from '@/services/issuerService';
 import { ClienteService } from '@/services/clienteService';
@@ -266,7 +266,7 @@ export default function RevisaoProposta() {
 
   // Build document and open preview
   // (PDF vectorial numa nova janela, com o template por omissão)
-  const handlePreview = () => {
+  const handlePreview = async () => {
     if (!proposal || !blueprint) return;
     const doc = buildProposalDocument({
       proposalId: proposal.id,
@@ -278,7 +278,11 @@ export default function RevisaoProposta() {
       clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
     });
     try {
-      previsualizarPdf(converterDocumentoAvancado(doc), obterTemplateDefault());
+      // logotipo (URL assinada) → data URL para o jsPDF embutir
+      previsualizarPdf(
+        await resolverLogotipoParaPdf(converterDocumentoAvancado(doc)),
+        obterTemplateDefault(),
+      );
     } catch (err) {
       console.error('PDF preview error:', err);
       toast.error('Erro ao gerar a pré-visualização do PDF.');
@@ -299,7 +303,11 @@ export default function RevisaoProposta() {
         companyInfo: getCompanyInfo(),
         clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
       });
-      baixarPropostaPdf(converterDocumentoAvancado(doc), obterTemplateDefault());
+      // logotipo (URL assinada) → data URL para o jsPDF embutir
+      baixarPropostaPdf(
+        await resolverLogotipoParaPdf(converterDocumentoAvancado(doc)),
+        obterTemplateDefault(),
+      );
       // Update proposal status to 'exportada'
       await updateAdvancedProposalStatus(proposal.id, 'exportada');
       toast.success('Proposta exportada em PDF, pronta a enviar ao cliente!');

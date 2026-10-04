@@ -7,7 +7,7 @@
 // ============================================================
 
 import { supabase } from '@/integrations/supabase/client';
-import { pdfPropostaBase64 } from '@/lib/pdf/gerar';
+import { pdfPropostaBase64, resolverLogotipoParaPdf } from '@/lib/pdf/gerar';
 import { nomeFicheiroPdf } from '@/lib/pdf/utils';
 import type { DadosPropostaPdf, PdfTemplateId } from '@/lib/pdf/tipos';
 
@@ -41,7 +41,8 @@ export const propostaEmailService = {
     }
 
     try {
-      const base64 = pdfPropostaBase64(dados, templateId);
+      // logotipo (URL assinada) → data URL antes de gerar o PDF
+      const base64 = pdfPropostaBase64(await resolverLogotipoParaPdf(dados), templateId);
       const { data, error } = await supabase.functions.invoke('send-proposal-email', {
         body: {
           para: para.trim(),

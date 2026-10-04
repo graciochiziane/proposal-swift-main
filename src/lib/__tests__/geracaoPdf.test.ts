@@ -10,13 +10,13 @@
 //   → escreve os PDFs de amostra em /home/z/my-project/preview-pdf (QA visual)
 // ============================================================
 
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { jsPDF } from 'jspdf';
 import { parseMarkdown, parseInline } from '../pdf/markdown';
 import { limparTextoPdf, nomeFicheiroPdf } from '../pdf/utils';
 import { MotorPdf } from '../pdf/motor';
-import { gerarPropostaPdf, pdfPropostaBase64 } from '../pdf/gerar';
+import { gerarPropostaPdf, pdfPropostaBase64, resolverLogotipoParaPdf } from '../pdf/gerar';
 import type { DadosPropostaPdf } from '../pdf/tipos';
 import { seccoesParaPdf } from '../pdf/converter';
 
@@ -343,3 +343,61 @@ describe('pagamentos extras (formas dinâmicas do dono)', () => {
     }
   });
 });
+
+// ============================================================
+// resolverLogotipoParaPdf — ponte URL assinada → data URL
+//
+// O IssuerService devolve o logotipo como signed URL HTTP; o
+// motor PDF apenas embute data URLs. Estes testes cobrem os ramos
+// puros e a degradação (rede/formato) — sem depender de rede.
+// ============================================================
+
+describe('resolverLogotipoParaPdf (URL → data URL para o jsPDF)', () => {
+  test('sem logotipo devolve os dados inalterados', async () => {
+    const resolvido = await resolverLogotipoParaPdf(AMOSTRA);
+    expect(resolvido).toBe(AMOSTRA); // mesma instância — nada a fazer
+    expect(resolvido.empresa.logotipo).toBeUndefined();
+  });
+
+  test('logotipo já em data URL passa sem reprocessamento', async () => {
+    const dados: DadosPropostaPdf = {
+      ...AMOSTRA,
+      empresa: { ...AMOSTRA.empresa, logotipo: 'data:image/png;base64,iVBORw0KGgo=' },
+    };
+    const resolvido = await resolverLogotipoParaPdf(dados);
+    expect(resolvido).toBe(dados); // mesmo objecto, sem fetch
+    expect(resolvido.empresa.logotipo).toBe('data:image/png;base64,iVBORw0KGgo=');
+  });
+
+  test('URL http com falha de rede degrada para fallback textual', async () => {
+    const dados: DadosPropostaPdf = {
+      ...AMOSTRA,
+      empresa: { ...AMOSTRA.empresa, logotipo: 'https://storage.exemplo.co/logos/abc/logo-1.png' },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    try {
+      const resolvido = await resolverLogotipoParaPdf(dados);
+      expect(resolvido).not.toBe(dados); // cópia, original intacto
+      expect(resolvido.empresa.logotipo).toBeUndefined();
+      expect(resolvido.empresa.nome).toBe(dados.empresa.nome); // resto preservado
+      expect(dados.empresa.logotipo).toContain('https://'); // input não mutado
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('resposta HTTP não-ok (ex.: signed URL expirada) degrada sem lançar', async () => {
+    const dados: DadosPropostaPdf = {
+      ...AMOSTRA,
+      empresa: { ...AMOSTRA.empresa, logotipo: 'https://storage.exemplo.co/logos/abc/logo-1.png' },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    try {
+      const resolvido = await resolverLogotipoParaPdf(dados);
+      expect(resolvido.empresa.logotipo).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
