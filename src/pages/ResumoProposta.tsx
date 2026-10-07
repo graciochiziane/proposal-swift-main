@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
@@ -9,6 +9,8 @@ import type { PdfTemplateId } from '@/lib/pdf';
 import { propostaEmailService } from '@/services/propostaEmailService';
 import { CrmService } from '@/services/crmService';
 import { usePlanFeatures } from '@/hooks/usePlanFeatures';
+import { useAuth } from '@/hooks/useAuth';
+import { OrganizationTemplateService } from '@/services/organizationTemplateService';
 import { FileDown, Eye, Pencil, Copy, Loader2, Sparkles, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { converterPropostaEmFactura, getFaturasPorProposta, atualizarStatusFatura } from '@/services/faturaService';
@@ -17,11 +19,16 @@ import type { Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
 export default function ResumoProposta() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { organization } = useAuth();
   // Item 2 — gate do CRM por plano: evita tentativa de registo em orgs sem CRM
   const { hasFeature } = usePlanFeatures();
   // cotação abre por omissão no layout de referência (factura moderna);
-  // o selector continua a permitir trocar para Executivo/Editorial
+  // o selector continua a permitir trocar para Executivo/Editorial.
+  // Se a organização activa tiver default definido (organization_templates),
+  // o selector ARRANCA nesse modelo — a escolha manual do utilizador
+  // continua a ganhar depois disso (precedência: proposta > org > base).
   const [templateId, setTemplateId] = useState<PdfTemplateId>('cotacao');
+  const templateManualRef = useRef(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // estado do modal de envio por email
@@ -61,6 +68,22 @@ export default function ResumoProposta() {
 
     loadData();
   }, [id]);
+
+  // Template inicial da org: resolve o default de organization_templates
+  // quando a org activa for conhecida (uma query leve, RLS-filtrada).
+  // Sem linhas/erro → 'cotacao' (comportamento pré-resolver, idêntico).
+  useEffect(() => {
+    const orgId = organization?.id;
+    if (!orgId) return;
+    let cancelado = false;
+    (async () => {
+      const resolvido = await OrganizationTemplateService.resolverTemplateParaOrganizacao(orgId, 'cotacao');
+      if (!cancelado && !templateManualRef.current && resolvido !== 'cotacao') {
+        setTemplateId(resolvido);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [organization?.id]);
 
   useEffect(() => {
     if (!id) return;
@@ -300,7 +323,10 @@ export default function ResumoProposta() {
           )}
           <select
             value={templateId}
-            onChange={e => setTemplateId(e.target.value as PdfTemplateId)}
+            onChange={e => {
+              templateManualRef.current = true; // escolha manual ganha ao default da org
+              setTemplateId(e.target.value as PdfTemplateId);
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
             title="Modelo PDF da proposta"
           >
