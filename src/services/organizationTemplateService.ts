@@ -17,8 +17,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { resolverTemplateParaOrg } from '@/lib/pdf/resolver';
-import { obterTemplateInfo } from '@/lib/pdf/templates';
-import { TEMPLATES_PDF } from '@/lib/pdf/templates';
+import { TEMPLATES_PDF, obterTemplateInfo } from '@/lib/pdf/templates';
 import type { PdfTemplateId } from '@/lib/pdf/tipos';
 
 /** Linha de organization_templates (espelho do schema) */

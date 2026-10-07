@@ -17,6 +17,7 @@ import {
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Bar, BarChart, XAxis, YAxis } from 'recharts';
 import { ArrowLeft, Save, Ban, CheckCircle, Brain, Trash2 } from 'lucide-react';
+import TenantTemplatesTab from '@/pages/admin/TenantTemplatesTab';
 
 const iaChartConfig: ChartConfig = { count: { label: 'Gerações IA', color: 'hsl(var(--chart-2))' } };
 
@@ -32,7 +33,7 @@ export default function TenantDetailPage() {
   const { user } = useAuth();
   const [checking, setChecking] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'audit'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'audit' | 'templates'>('overview');
 
   // Data
   const [tenant, setTenant] = useState<TenantDetail | null>(null);
@@ -174,10 +175,10 @@ export default function TenantDetailPage() {
 
       {/* Tab selector */}
       <div className="flex gap-2">
-        {(['overview', 'members', 'audit'] as const).map(tab => (
+        {(['overview', 'members', 'audit', 'templates'] as const).map(tab => (
           <Button key={tab} variant={activeTab === tab ? 'default' : 'outline'} size="sm"
             onClick={() => setActiveTab(tab)}>
-            {{ overview: 'Visão Geral', members: 'Membros', audit: 'Auditoria' }[tab]}
+            {{ overview: 'Visão Geral', members: 'Membros', audit: 'Auditoria', templates: 'Templates' }[tab]}
           </Button>
         ))}
       </div>
@@ -417,6 +418,8 @@ export default function TenantDetailPage() {
           </CardContent>
         </Card>
       )}
+      {/* TAB: Templates (modelos PDF por organização) */}
+      {activeTab === 'templates' && id && <TenantTemplatesTab organizationId={id} />}
     </div>
   );
 }
