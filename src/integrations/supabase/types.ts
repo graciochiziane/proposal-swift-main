@@ -760,6 +760,50 @@ export type Database = {
           },
         ]
       }
+      organization_templates: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          is_default: boolean
+          nome: string
+          organization_id: string
+          template_key: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          nome: string
+          organization_id: string
+          template_key: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          nome?: string
+          organization_id?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           contact_email: string | null
