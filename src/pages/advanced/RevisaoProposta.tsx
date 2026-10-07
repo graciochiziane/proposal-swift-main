@@ -26,6 +26,7 @@ import {
   buildProposalDocument,
 } from '@/lib/advanced';
 import { converterDocumentoAvancado, previsualizarPdf, baixarPropostaPdf, obterTemplateDefault, resolverLogotipoParaPdf } from '@/lib/pdf';
+import { OrganizationTemplateService } from '@/services/organizationTemplateService';
 import { useAuth } from '@/hooks/useAuth';
 import { IssuerService } from '@/services/issuerService';
 import { ClienteService } from '@/services/clienteService';
@@ -265,7 +266,8 @@ export default function RevisaoProposta() {
   };
 
   // Build document and open preview
-  // (PDF vectorial numa nova janela, com o template por omissão)
+  // (PDF vectorial numa nova janela; template = default da org activa
+  //  → fallback à preferência do user, quando a org não define)
   const handlePreview = async () => {
     if (!proposal || !blueprint) return;
     const doc = buildProposalDocument({
@@ -281,7 +283,7 @@ export default function RevisaoProposta() {
       // logotipo (URL assinada) → data URL para o jsPDF embutir
       previsualizarPdf(
         await resolverLogotipoParaPdf(converterDocumentoAvancado(doc)),
-        obterTemplateDefault(),
+        await OrganizationTemplateService.resolverTemplateParaOrganizacao(organization?.id, obterTemplateDefault()),
       );
     } catch (err) {
       console.error('PDF preview error:', err);
@@ -306,7 +308,7 @@ export default function RevisaoProposta() {
       // logotipo (URL assinada) → data URL para o jsPDF embutir
       baixarPropostaPdf(
         await resolverLogotipoParaPdf(converterDocumentoAvancado(doc)),
-        obterTemplateDefault(),
+        await OrganizationTemplateService.resolverTemplateParaOrganizacao(organization?.id, obterTemplateDefault()),
       );
       // Update proposal status to 'exportada'
       await updateAdvancedProposalStatus(proposal.id, 'exportada');
