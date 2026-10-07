@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, Fragment, type ChangeEvent } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import { IssuerService } from '@/services/issuerService';
@@ -19,12 +19,15 @@ import {
   CheckCircle2, ChevronRight, Download, FileSpreadsheet,
 } from 'lucide-react';
 import { calcularTotal } from '@/lib/calculos';
+import { useAuth } from '@/hooks/useAuth';
+import { OrganizationTemplateService } from '@/services/organizationTemplateService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import type { DonoProposta } from '@/types';
 
 export default function GerarPropostaIA() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { organization } = useAuth();
 
   // Data state
   const [proposta, setProposta] = useState<PropostaCompleta | null>(null);
@@ -223,12 +226,35 @@ export default function GerarPropostaIA() {
   // Doc A: PDF vectorial com o modelo escolhido no selector abaixo
   // (a escolha é gravada como omissão global e obedecida aqui e no
   // resto do app); a cotação (Doc B) é gerada no Resumo.
+  // Precedência do arranque: default da org (organization_templates)
+  // > preferência do user (localStorage) > 'executivo'.
   const [isExporting, setIsExporting] = useState(false);
   const [templateId, setTemplateId] = useState<PdfTemplateId>(obterTemplateDefault());
+  const templateManualRef = useRef(false);
+
+  // Arranque no default da org (uma query leve, RLS-filtrada).
+  // Sem linhas/erro → mantém obterTemplateDefault() (comportamento
+  // pré-resolver, idêntico). A escolha manual ganha depois disso.
+  useEffect(() => {
+    const orgId = organization?.id;
+    if (!orgId) return;
+    let cancelado = false;
+    (async () => {
+      const resolvido = await OrganizationTemplateService.resolverTemplateParaOrganizacao(
+        orgId,
+        obterTemplateDefault(),
+      );
+      if (!cancelado && !templateManualRef.current) {
+        setTemplateId(actual => (actual === resolvido ? actual : resolvido));
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [organization?.id]);
 
   /** A escolha do modelo é imediata e passa a ser a omissão do app. */
   const handleTemplateChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const novo = e.target.value as PdfTemplateId;
+    templateManualRef.current = true; // escolha manual ganha ao default da org
     setTemplateId(novo);
     definirTemplateDefault(novo);
   };
