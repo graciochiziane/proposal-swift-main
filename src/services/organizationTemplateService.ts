@@ -5,6 +5,11 @@
 // resolver puro de src/lib/pdf/resolver.ts) + CRUD para o painel
 // de administração (aba Templates do TenantDetailPage).
 //
+// Distinção de origem (pedido do cliente): cada linha é
+// 'personalizado' (identidade própria do cliente) ou
+// 'adquirido' (modelo do catálogo). Metadado visual/comercial
+// — o resolver ignora a origem (cadeia de fallback intacta).
+//
 // Segurança: TODAS as queries passam pela RLS da tabela
 // organization_templates (user_belongs_to_org por linha) — o
 // organizationId recebido é, no máximo, uma dica de UX; um
@@ -20,12 +25,19 @@ import { resolverTemplateParaOrg } from '@/lib/pdf/resolver';
 import { TEMPLATES_PDF, obterTemplateInfo } from '@/lib/pdf/templates';
 import type { PdfTemplateId } from '@/lib/pdf/tipos';
 
+/**
+ * Origem do modelo no tenant (distinção pedida pelo cliente):
+ * 'personalizado' = identidade própria do cliente · 'adquirido' = catálogo.
+ */
+export type OrigemTemplate = 'adquirido' | 'personalizado';
+
 /** Linha de organization_templates (espelho do schema) */
 export interface OrganizationTemplate {
   id: string;
   organization_id: string;
   template_key: string;
   nome: string;
+  origem: OrigemTemplate;
   is_active: boolean;
   is_default: boolean;
   config: Record<string, unknown>;
@@ -41,6 +53,8 @@ function paraTemplate(row: Record<string, unknown>): OrganizationTemplate {
     organization_id: row.organization_id as string,
     template_key: row.template_key as string,
     nome: row.nome as string,
+    // coluna nova: linha antiga / migration ainda não aplicada → 'adquirido'
+    origem: row.origem === 'personalizado' ? 'personalizado' : 'adquirido',
     is_active: row.is_active as boolean,
     is_default: row.is_default as boolean,
     config: (row.config ?? {}) as Record<string, unknown>,
@@ -156,6 +170,7 @@ export const OrganizationTemplateService = {
     organization_id: string;
     template_key: PdfTemplateId;
     nome?: string;
+    origem?: OrigemTemplate;
     is_default?: boolean;
   }): Promise<OrganizationTemplate> {
     const nome = input.nome?.trim() || obterTemplateInfo(input.template_key).nome;
@@ -175,6 +190,7 @@ export const OrganizationTemplateService = {
         organization_id: input.organization_id,
         template_key: input.template_key,
         nome,
+        origem: input.origem ?? 'adquirido',
         is_active: true,
         is_default: input.is_default ?? false,
       })
