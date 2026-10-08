@@ -71,6 +71,23 @@ export const TEMPLATES_PDF: PdfTemplateInfo[] = [
       'Régua dupla sobre o valor total',
     ],
   },
+  {
+    id: 'talaService',
+    nome: 'Cotação Corporativa (Tala Service)',
+    descricao:
+      'Réplica data-driven da cotação de referência Tala Service: folha branca '
+      + 'minimalista, logótipo em destaque, título «Cotação Nº» em turquesa, tabela '
+      + 'de itens entre réguas finas, marca d\u2019água gigante do próprio logótipo '
+      + 'no centro, valor por extenso, bloco de pagamento configurável por campos '
+      + 'personalizados da organização e rodapé discreto com data, emissor e paginação.',
+    caracteristicas: [
+      'Marca d\u2019água dinâmica: logótipo da organização ao centro com opacidade muito baixa',
+      'Tabela simples sem cartões: régua superior + inferior, sem separadores de linha',
+      'Valor por extenso calculado a partir do total do motor financeiro',
+      'Bloco de pagamento alimentado por organization.custom_fields (banco, NIB, instruções, contacto)',
+      'Blocos sem dados desaparecem de forma elegante (nunca texto fictício)',
+    ],
+  },
 ];
 
 export function obterTemplateInfo(id: PdfTemplateId): PdfTemplateInfo {
@@ -81,7 +98,7 @@ export function obterTemplateInfo(id: PdfTemplateId): PdfTemplateInfo {
 export function obterTemplateDefault(): PdfTemplateId {
   try {
     const guardado = localStorage.getItem(CHAVE_DEFAULT);
-    if (guardado === 'executivo' || guardado === 'editorial' || guardado === 'cotacao' || guardado === 'minimal') return guardado;
+    if (guardado === 'executivo' || guardado === 'editorial' || guardado === 'cotacao' || guardado === 'minimal' || guardado === 'talaService') return guardado;
   } catch { /* localStorage indisponível */ }
   return 'executivo';
 }

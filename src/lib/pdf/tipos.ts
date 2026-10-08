@@ -7,7 +7,7 @@
 // ============================================================
 
 /** Identificadores dos templates PDF incorporados */
-export type PdfTemplateId = 'executivo' | 'editorial' | 'cotacao' | 'minimal';
+export type PdfTemplateId = 'executivo' | 'editorial' | 'cotacao' | 'minimal' | 'talaService';
 
 /** Metadados de um template (para galeria/selectores) */
 export interface PdfTemplateInfo {
@@ -79,6 +79,16 @@ export interface PagamentoPdf {
 }
 
 /**
+ * Emitente individual (utilizador autenticado) — usado em
+ * rodapés tipo "Emitido por". Distinto da empresa: o utilizador
+ * pertence à organização mas não É a organização.
+ */
+export interface DadosPdfEmitente {
+  nome?: string;
+  email?: string;
+}
+
+/**
  * Documento completo a renderizar.
  * `mostrarFinanceiro=false` produz o Doc A (narrativa IA sem
  * tabela de itens/totais); `true` produz a cotação completa.
@@ -91,6 +101,16 @@ export interface DadosPropostaPdf {
   validadeDias?: number;
   cliente: DadosPdfCliente;
   empresa: DadosPdfEmpresa;
+  /** utilizador autenticado que emite (rodapé "Emitido por") */
+  emitente?: DadosPdfEmitente;
+  /**
+   * Campos personalizados da organização activa
+   * (organization.custom_fields.<field_key>) — dados além do
+   * modelo estruturado (instruções de pagamento, banco, cidade,
+   * slogan, …). Preenchido pela camada de entrada via
+   * anexarCamposPersonalizados; templates que não os usam ignoram.
+   */
+  camposPersonalizados?: Record<string, string>;
   itens: ItemPdf[];
   mostrarFinanceiro: boolean;
   totais: TotaisPdf;
