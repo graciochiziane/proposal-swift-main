@@ -26,6 +26,7 @@ import {
   buildProposalDocument,
 } from '@/lib/advanced';
 import { converterDocumentoAvancado, previsualizarPdf, baixarPropostaPdf, obterTemplateDefault, resolverLogotipoParaPdf } from '@/lib/pdf';
+import { anexarCamposPersonalizados } from '@/services/organizationCustomFieldService';
 import { OrganizationTemplateService } from '@/services/organizationTemplateService';
 import { useAuth } from '@/hooks/useAuth';
 import { IssuerService } from '@/services/issuerService';
@@ -280,9 +281,10 @@ export default function RevisaoProposta() {
       clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
     });
     try {
-      // logotipo (URL assinada) → data URL para o jsPDF embutir
+      // logotipo (URL assinada) → data URL para o jsPDF embutir;
+      // campos personalizados da org para modelos que os usam (talaService)
       previsualizarPdf(
-        await resolverLogotipoParaPdf(converterDocumentoAvancado(doc)),
+        await anexarCamposPersonalizados(await resolverLogotipoParaPdf(converterDocumentoAvancado(doc))),
         await OrganizationTemplateService.resolverTemplateParaOrganizacao(organization?.id, obterTemplateDefault()),
       );
     } catch (err) {
@@ -305,9 +307,10 @@ export default function RevisaoProposta() {
         companyInfo: getCompanyInfo(),
         clientInfo: { name: clientInfo.name, company: clientInfo.company, email: clientInfo.email, phone: clientInfo.phone },
       });
-      // logotipo (URL assinada) → data URL para o jsPDF embutir
+      // logotipo (URL assinada) → data URL para o jsPDF embutir;
+      // campos personalizados da org para modelos que os usam (talaService)
       baixarPropostaPdf(
-        await resolverLogotipoParaPdf(converterDocumentoAvancado(doc)),
+        await anexarCamposPersonalizados(await resolverLogotipoParaPdf(converterDocumentoAvancado(doc))),
         await OrganizationTemplateService.resolverTemplateParaOrganizacao(organization?.id, obterTemplateDefault()),
       );
       // Update proposal status to 'exportada'

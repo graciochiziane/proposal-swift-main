@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import CamposPersonalizadosCard from '@/components/org/CamposPersonalizadosCard';
 
 // ── Validadores ──
 /** NUIT moçambicano: apenas dígitos, 8 a 9 (formato comum: 9). */
@@ -289,6 +290,9 @@ export default function EmpresaPerfilTab({ canEdit }: { canEdit: boolean }) {
           )}
         </CardContent>
       </Card>
+
+      {/* Campos personalizados — alimentam templates PDF (ex.: talaService) */}
+      {organization && <CamposPersonalizadosCard organizationId={organization.id} canEdit={canEdit} />}
     </div>
   );
 }

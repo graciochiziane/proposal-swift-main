@@ -41,6 +41,9 @@ export const ProfileService = {
       cargo: data.cargo || '',
       empresa: data.empresa || '',
       contacto: data.contacto || '',
+      // email do utilizador autenticado (coluna NOT NULL em profiles) —
+      // alimenta o campo opcional DonoProposta.email (rodapés "Emitido por")
+      email: data.email || undefined,
       nuit: data.nuit || '',
       endereco: data.endereco || '',
       logotipo: logotipoUrl,
@@ -133,7 +136,7 @@ export const ProfileService = {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) throw new Error('Utilizador não autenticado');
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       nome: perfil.nome,
       cargo: perfil.cargo,
       empresa: perfil.empresa,

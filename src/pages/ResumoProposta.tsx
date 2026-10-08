@@ -5,6 +5,7 @@ import type { PropostaCompleta } from '@/services/propostaService';
 import { IssuerService } from '@/services/issuerService';
 import { calcularTotal } from '@/lib/calculos';
 import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf, resolverLogotipoParaPdf } from '@/lib/pdf';
+import { anexarCamposPersonalizados } from '@/services/organizationCustomFieldService';
 import type { PdfTemplateId } from '@/lib/pdf';
 import { propostaEmailService } from '@/services/propostaEmailService';
 import { CrmService } from '@/services/crmService';
@@ -124,8 +125,11 @@ export default function ResumoProposta() {
     setGeneratingPdf(true);
     try {
       // o logotipo chega como URL assinada do Storage — resolver para
-      // data URL antes de gerar (falha → fallback do nome da empresa)
-      const dados = await resolverLogotipoParaPdf(construirDadosPdf(proposta, cliente, dono));
+      // data URL antes de gerar (falha → fallback do nome da empresa);
+      // depois anexar os campos personalizados da org (ex.: talaService)
+      const dados = await anexarCamposPersonalizados(
+        await resolverLogotipoParaPdf(construirDadosPdf(proposta, cliente, dono)),
+      );
       if (mode === 'download') {
         baixarPropostaPdf(dados, templateId);
         toast.success('Proposta PDF gerada com sucesso');

@@ -91,6 +91,7 @@ export const IssuerService = {
         cargo: '',
         empresa: org.nome || '',
         contacto: '',
+        email: org.contact_email || undefined,
         nuit: org.nuit || '',
         endereco: org.endereco || '',
         logotipo: logoOrg,
@@ -111,6 +112,7 @@ export const IssuerService = {
       nome: profile.nome,          // pessoal — herda do utilizador autenticado
       cargo: profile.cargo,         // pessoal
       contacto: profile.contacto,   // pessoal
+      email: profile.email || org.contact_email || undefined, // pessoal → org
       empresa: org.nome || profile.empresa,
       nuit: org.nuit || profile.nuit,
       endereco: org.endereco || profile.endereco,

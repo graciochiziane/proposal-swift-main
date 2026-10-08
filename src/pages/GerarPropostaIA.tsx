@@ -4,6 +4,7 @@ import { PropostaService, formatMZN } from '@/services/propostaService';
 import { IssuerService } from '@/services/issuerService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
 import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateDefault, definirTemplateDefault, TEMPLATES_PDF, resolverLogotipoParaPdf } from '@/lib/pdf';
+import { anexarCamposPersonalizados } from '@/services/organizationCustomFieldService';
 import type { PdfTemplateId } from '@/lib/pdf';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -263,9 +264,12 @@ export default function GerarPropostaIA() {
     if (!proposta || !dono || !seccoes) return;
     setIsExporting(true);
     try {
-      // logotipo (URL assinada) → data URL para o jsPDF embutir
-      const dados = await resolverLogotipoParaPdf(
-        construirDadosNarrativaPdf(proposta, dono, seccoes, includedSections),
+      // logotipo (URL assinada) → data URL para o jsPDF embutir;
+      // campos personalizados da org para modelos que os usam (talaService)
+      const dados = await anexarCamposPersonalizados(
+        await resolverLogotipoParaPdf(
+          construirDadosNarrativaPdf(proposta, dono, seccoes, includedSections),
+        ),
       );
       if (modo === 'download') {
         baixarPropostaPdf(dados, templateId);

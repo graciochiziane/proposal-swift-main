@@ -116,6 +116,11 @@ export function construirDadosPdf(
       logotipo: dono?.logotipo || undefined,
       corPrimaria: dono?.corPrimaria || undefined,
     },
+    // emitente individual (rodapé "Emitido por" do talaService e futuros
+    // modelos) — o dono transporta o nome do utilizador autenticado
+    emitente: dono && (dono.nome || dono.email)
+      ? { nome: dono.nome || undefined, email: dono.email || undefined }
+      : undefined,
     itens: (proposta.itens || []).map(item => ({
       nome: item.nome,
       quantidade: item.quantidade,
