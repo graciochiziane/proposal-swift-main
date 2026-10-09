@@ -6,7 +6,7 @@
 // ============================================================
 
 export type { PdfTemplateId, PdfTemplateInfo, DadosPropostaPdf, DadosPdfCliente, DadosPdfEmpresa, SecaoPdf, ItemPdf, TotaisPdf, PagamentoPdf } from './tipos';
-export { TEMPLATES_PDF, obterTemplateDefault, definirTemplateDefault, obterTemplateInfo } from './templates';
+export { TEMPLATES_PDF, obterTemplateDefault, definirTemplateDefault, obterTemplateInfo, templatesVisiveisPara } from './templates';
 export { gerarPropostaPdf, baixarPropostaPdf, previsualizarPdf, pdfPropostaBase64, resolverLogotipoParaPdf } from './gerar';
 export { resolverTemplateParaOrg, chaveTemplateRegistada } from './resolver';
 export type { ConsultadorTemplateOrg } from './resolver';

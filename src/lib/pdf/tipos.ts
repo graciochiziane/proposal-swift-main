@@ -15,6 +15,13 @@ export interface PdfTemplateInfo {
   nome: string;
   descricao: string;
   caracteristicas: string[];
+  /**
+   * Modelo RESTRITO: só aparece/selectable para organizações
+   * com linha activa em organization_templates (atribuição feita
+   * pelo superadmin). Modelos não restritos ficam disponíveis a
+   * todos (comportamento histórico do catálogo base).
+   */
+  restrito?: boolean;
 }
 
 /** Dados do cliente impressos no PDF */

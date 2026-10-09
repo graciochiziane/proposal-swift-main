@@ -74,6 +74,7 @@ export const TEMPLATES_PDF: PdfTemplateInfo[] = [
   {
     id: 'talaService',
     nome: 'Cotação Corporativa (Tala Service)',
+    restrito: true,
     descricao:
       'Réplica data-driven da cotação de referência Tala Service: folha branca '
       + 'minimalista, logótipo em destaque, título «Cotação Nº» em turquesa, tabela '
@@ -94,11 +95,34 @@ export function obterTemplateInfo(id: PdfTemplateId): PdfTemplateInfo {
   return TEMPLATES_PDF.find(t => t.id === id) ?? TEMPLATES_PDF[0];
 }
 
+/**
+ * Catálogo visível para uma organização: modelos base (não
+ * restritos) + modelos restritos ATRIBUÍDOS com linha activa à
+ * org (chaves vêm de organization_templates, escrita exclusiva
+ * do superadmin). Sem chaves (utilizador sem org / erro / org
+ * sem atribuições) devolve apenas os modelos não restritos.
+ */
+export function templatesVisiveisPara(chavesAtribuidas: string[] | Set<string> | null | undefined): PdfTemplateInfo[] {
+  const atribuidas = chavesAtribuidas instanceof Set ? chavesAtribuidas : new Set(chavesAtribuidas ?? []);
+  return TEMPLATES_PDF.filter(t => !t.restrito || atribuidas.has(t.id));
+}
+
 /** Template por omissão (localStorage; 'executivo' se não definido) */
-export function obterTemplateDefault(): PdfTemplateId {
+export function obterTemplateDefault(): PdfTemplateId;
+/**
+ * Template por omissão validado contra um catálogo permitido
+ * (ex.: chaves visíveis para a org activa). Preferência guardada
+ * fora do permitido (ex.: restrito des-atribuído) degrada para
+ * 'executivo' — nunca erro, nunca uso de modelo não atribuído.
+ */
+export function obterTemplateDefault(permitidas: PdfTemplateId[]): PdfTemplateId;
+export function obterTemplateDefault(permitidas?: PdfTemplateId[]): PdfTemplateId {
+  let guardado: string | null = null;
   try {
-    const guardado = localStorage.getItem(CHAVE_DEFAULT);
-    if (guardado === 'executivo' || guardado === 'editorial' || guardado === 'cotacao' || guardado === 'minimal' || guardado === 'talaService') return guardado;
+    guardado = localStorage.getItem(CHAVE_DEFAULT);
+    if (guardado === 'executivo' || guardado === 'editorial' || guardado === 'cotacao' || guardado === 'minimal' || guardado === 'talaService') {
+      if (!permitidas || permitidas.includes(guardado)) return guardado;
+    }
   } catch { /* localStorage indisponível */ }
   return 'executivo';
 }

@@ -1,21 +1,30 @@
 // ============================================================
 // Modelos de Proposta PDF (galeria)
 //
-// Mostra os 3 templates incorporados (Cotação, Executivo e
-// Editorial) com miniaturas CSS, características e escolha do
-// modelo por omissão (localStorage). Os modelos são gerados em
-// código (PDF vectorial) — já não há templates HTML em base de
-// dados nem editor de HTML.
+// Mostra os templates incorporados com miniaturas CSS,
+// características e escolha do modelo por omissão
+// (localStorage). Os modelos são gerados em código (PDF
+// vectorial) — já não há templates HTML em base de dados.
+//
+// GATING: desde a restricao de catálogo, esta página mostra
+// apenas os modelos disponíveis para a org activa (base +
+// restritos atribuídos pelo superadmin) e sanitiza a omissão
+// pessoal. Acesso exclusivo do platform admin (a rota
+// /admin/templates vive na área admin — mesma verificação
+// que Admin.tsx e TenantDetailPage fazem internamente).
 // ============================================================
 
-import { useState } from 'react';
-import { TEMPLATES_PDF, obterTemplateDefault, definirTemplateDefault } from '@/lib/pdf';
+import { useState, useEffect } from 'react';
+import { TEMPLATES_PDF, obterTemplateDefault, definirTemplateDefault, templatesVisiveisPara } from '@/lib/pdf';
 import type { PdfTemplateId } from '@/lib/pdf';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check } from 'lucide-react';
+import { Check, Loader2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { OrganizationTemplateService } from '@/services/organizationTemplateService';
 
 /** Miniatura CSS do modelo Executivo (banda escura + cartões) */
 function MiniaturaExecutivo({ cor }: { cor: string }): JSX.Element {
@@ -264,7 +273,47 @@ function MiniaturaMinimal({ cor }: { cor: string }): JSX.Element {
 }
 
 export default function TemplateManager() {
-  const [templateDefault, setTemplateDefault] = useState<PdfTemplateId>(obterTemplateDefault());
+  const { user, organization } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [verificando, setVerificando] = useState(true);
+  // Catálogo visível: modelos base + restritos atribuídos à org activa
+  const [catalogo, setCatalogo] = useState(() => templatesVisiveisPara(null));
+  const [templateDefault, setTemplateDefault] = useState<PdfTemplateId>(() =>
+    obterTemplateDefault(templatesVisiveisPara(null).map(t => t.id)),
+  );
+
+  // Verificação de role (mesma disciplina de Admin.tsx / TenantDetailPage):
+  // guarda interna da área /admin — defense in depth junto à RLS.
+  useEffect(() => {
+    if (!user) return;
+    let cancelado = false;
+    (async () => {
+      const { data } = await supabase.from('user_roles').select('role').eq('user_id', user.id);
+      if (!cancelado) {
+        setIsAdmin(!!data?.some(r => r.role === 'admin'));
+        setVerificando(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [user]);
+
+  // Filtra o catálogo às linhas atribuídas à org activa (RLS:
+  // membros lêem só as próprias). Erro → catálogo base.
+  useEffect(() => {
+    const orgId = organization?.id;
+    if (!orgId) return;
+    let cancelado = false;
+    (async () => {
+      const chaves = await OrganizationTemplateService.chavesAtribuidasAtivas(orgId);
+      if (cancelado) return;
+      const visiveis = templatesVisiveisPara(chaves);
+      setCatalogo(visiveis);
+      // omissão pessoal sanitizada contra o catálogo visível
+      setTemplateDefault(prev =>
+        visiveis.some(t => t.id === prev) ? prev : obterTemplateDefault(visiveis.map(t => t.id)));
+    })();
+    return () => { cancelado = true; };
+  }, [organization?.id]);
 
   const activar = (id: PdfTemplateId): void => {
     definirTemplateDefault(id);
@@ -272,6 +321,23 @@ export default function TemplateManager() {
     const info = TEMPLATES_PDF.find(t => t.id === id);
     toast.success(`Modelo "${info?.nome ?? id}" definido como omissão`);
   };
+
+  if (verificando) {
+    return (
+      <div className="flex items-center justify-center py-20 gap-2 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" /> A verificar permissões...
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+        <ShieldAlert className="h-10 w-10 text-destructive" />
+        <p className="text-sm text-muted-foreground">Acesso negado: área restrita a administradores.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -284,7 +350,7 @@ export default function TemplateManager() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        {TEMPLATES_PDF.map(template => {
+        {catalogo.map(template => {
           const cor = template.id === 'editorial' ? '#8A6D3B' : template.id === 'cotacao' ? '#F97316' : template.id === 'minimal' ? '#0F172A' : '#1F4E79';
           const activo = templateDefault === template.id;
           return (

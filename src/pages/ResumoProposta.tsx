@@ -4,7 +4,7 @@ import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import { IssuerService } from '@/services/issuerService';
 import { calcularTotal } from '@/lib/calculos';
-import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf, resolverLogotipoParaPdf } from '@/lib/pdf';
+import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf, resolverLogotipoParaPdf, templatesVisiveisPara, obterTemplateInfo } from '@/lib/pdf';
 import { anexarCamposPersonalizados } from '@/services/organizationCustomFieldService';
 import type { PdfTemplateId } from '@/lib/pdf';
 import { propostaEmailService } from '@/services/propostaEmailService';
@@ -30,6 +30,10 @@ export default function ResumoProposta() {
   // continua a ganhar depois disso (precedência: proposta > org > base).
   const [templateId, setTemplateId] = useState<PdfTemplateId>('cotacao');
   const templateManualRef = useRef(false);
+  // Catálogo visível para a org activa: modelos base + restritos atribuídos
+  const [catalogoVisivel, setCatalogoVisivel] = useState(() =>
+    templatesVisiveisPara(null).map(t => t.id),
+  );
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // estado do modal de envio por email
@@ -70,18 +74,39 @@ export default function ResumoProposta() {
     loadData();
   }, [id]);
 
-  // Template inicial da org: resolve o default de organization_templates
-  // quando a org activa for conhecida (uma query leve, RLS-filtrada).
-  // Sem linhas/erro → 'cotacao' (comportamento pré-resolver, idêntico).
+  // Catálogo visível + default da org (uma carga por org):
+  // resolve o default de organization_templates quando a org
+  // activa for conhecida (queries leves, RLS-filtradas) e filtra
+  // o selector aos modelos atribuídos. Sem linhas/erro →
+  // 'cotacao' + só modelos base (comportamento pré-resolver).
+  // Modelos restritos sem atribuição ficam invisíveis e o selector
+  // actual é sanitizado (nunca usa modelo não atribuído). Trocas
+  // manuais posteriores estão confinadas às opções visíveis do
+  // próprio selector — sem re-queries.
   useEffect(() => {
     const orgId = organization?.id;
     if (!orgId) return;
     let cancelado = false;
     (async () => {
-      const resolvido = await OrganizationTemplateService.resolverTemplateParaOrganizacao(orgId, 'cotacao');
-      if (!cancelado && !templateManualRef.current && resolvido !== 'cotacao') {
-        setTemplateId(resolvido);
-      }
+      const [chaves, resolvido] = await Promise.all([
+        OrganizationTemplateService.chavesAtribuidasAtivas(orgId),
+        OrganizationTemplateService.resolverTemplateParaOrganizacao(orgId, 'cotacao'),
+      ]);
+      if (cancelado) return;
+      const visiveis = templatesVisiveisPara(chaves).map(t => t.id);
+      setCatalogoVisivel(visiveis);
+      setTemplateId(prev => {
+        // sanitização: modelo corrente invisível → default da org/fallback
+        if (!visiveis.includes(prev)) {
+          return visiveis.includes(resolvido) ? resolvido : 'cotacao';
+        }
+        // default da org ganha apenas enquanto não houver escolha manual
+        // (guard extra: default resolvido tem de estar no catálogo visível)
+        if (!templateManualRef.current && resolvido !== 'cotacao' && visiveis.includes(resolvido)) {
+          return resolvido;
+        }
+        return prev;
+      });
     })();
     return () => { cancelado = true; };
   }, [organization?.id]);
@@ -334,11 +359,14 @@ export default function ResumoProposta() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
             title="Modelo PDF da proposta"
           >
-            {TEMPLATES_PDF.map(t => (
-              <option key={t.id} value={t.id}>
-                Modelo: {t.nome}
-              </option>
-            ))}
+            {catalogoVisivel.map(id => {
+              const t = obterTemplateInfo(id);
+              return (
+                <option key={id} value={id}>
+                  Modelo: {t.nome}
+                </option>
+              );
+            })}
           </select>
           <button
             onClick={() => navigate(`/proposta/${proposta.id}/gerar-ia`)}

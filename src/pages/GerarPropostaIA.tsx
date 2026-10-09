@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import { IssuerService } from '@/services/issuerService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
-import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateDefault, definirTemplateDefault, TEMPLATES_PDF, resolverLogotipoParaPdf } from '@/lib/pdf';
+import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateDefault, definirTemplateDefault, TEMPLATES_PDF, resolverLogotipoParaPdf, templatesVisiveisPara, obterTemplateInfo } from '@/lib/pdf';
 import { anexarCamposPersonalizados } from '@/services/organizationCustomFieldService';
 import type { PdfTemplateId } from '@/lib/pdf';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -230,24 +230,44 @@ export default function GerarPropostaIA() {
   // Precedência do arranque: default da org (organization_templates)
   // > preferência do user (localStorage) > 'executivo'.
   const [isExporting, setIsExporting] = useState(false);
-  const [templateId, setTemplateId] = useState<PdfTemplateId>(obterTemplateDefault());
+  // Estado inicial sanitizado contra o catálogo base: preferência
+  // pessoal restrita (ex.: talaService des-atribuído) degrada para
+  // 'executivo' — nunca arranca em modelo não disponível.
+  const [templateId, setTemplateId] = useState<PdfTemplateId>(() =>
+    obterTemplateDefault(templatesVisiveisPara(null).map(t => t.id)));
   const templateManualRef = useRef(false);
+  // Catálogo visível para a org activa: modelos base + restritos atribuídos
+  const [catalogoVisivel, setCatalogoVisivel] = useState<PdfTemplateId[]>(() =>
+    templatesVisiveisPara(null).map(t => t.id),
+  );
 
-  // Arranque no default da org (uma query leve, RLS-filtrada).
-  // Sem linhas/erro → mantém obterTemplateDefault() (comportamento
-  // pré-resolver, idêntico). A escolha manual ganha depois disso.
+  // Arranque no default da org (queries leves, RLS-filtradas) +
+  // filtragem do catálogo às linhas atribuídas. Sem linhas/erro →
+  // catálogo base + preferência pessoal sanitizada (comportamento
+  // pré-resolver). Modelos restritos sem atribuição ficam invisíveis.
   useEffect(() => {
     const orgId = organization?.id;
     if (!orgId) return;
     let cancelado = false;
     (async () => {
+      const chaves = await OrganizationTemplateService.chavesAtribuidasAtivas(orgId);
+      if (cancelado) return;
+      const visiveis = templatesVisiveisPara(chaves).map(t => t.id);
+      setCatalogoVisivel(visiveis);
       const resolvido = await OrganizationTemplateService.resolverTemplateParaOrganizacao(
         orgId,
-        obterTemplateDefault(),
+        obterTemplateDefault(visiveis),
       );
-      if (!cancelado && !templateManualRef.current) {
-        setTemplateId(actual => (actual === resolvido ? actual : resolvido));
-      }
+      if (cancelado) return;
+      setTemplateId(prev => {
+        if (!visiveis.includes(prev)) {
+          return visiveis.includes(resolvido) ? resolvido : 'executivo';
+        }
+        if (!templateManualRef.current && visiveis.includes(resolvido)) {
+          return resolvido;
+        }
+        return prev;
+      });
     })();
     return () => { cancelado = true; };
   }, [organization?.id]);
@@ -578,11 +598,14 @@ export default function GerarPropostaIA() {
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
                 title="Modelo PDF da proposta — a escolha passa a ser a omissão"
               >
-                {TEMPLATES_PDF.map(t => (
-                  <option key={t.id} value={t.id}>
-                    Modelo: {t.nome}
-                  </option>
-                ))}
+                {catalogoVisivel.map(id => {
+                  const t = obterTemplateInfo(id);
+                  return (
+                    <option key={id} value={id}>
+                      Modelo: {t.nome}
+                    </option>
+                  );
+                })}
               </select>
               <Button
                 variant="outline"
