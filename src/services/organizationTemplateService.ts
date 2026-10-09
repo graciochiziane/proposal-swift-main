@@ -49,6 +49,9 @@ export interface OrganizationTemplate {
   updated_at: string;
 }
 
+/** Atribuição com o nome da org (vista global do superadmin) */
+export type AtribuicaoTemplate = OrganizationTemplate & { organization_nome: string | null };
+
 const TABELA = 'organization_templates' as const;
 
 function paraTemplate(row: Record<string, unknown>): OrganizationTemplate {
@@ -132,6 +135,76 @@ export const OrganizationTemplateService = {
       .order('created_at', { ascending: true });
     if (error) throw new Error(error.message);
     return (data ?? []).map((r: Record<string, unknown>) => paraTemplate(r));
+  },
+
+  /**
+   * TODAS as atribuições da plataforma com o nome da org
+   * (vista global do superadmin). RLS: só platform admin vê
+   * linhas além das da própria org. Lança em erro de leitura.
+   */
+  async listarTodas(): Promise<AtribuicaoTemplate[]> {
+    const { data, error } = await supabase
+      .from(TABELA)
+      .select('*, organizations(nome)')
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      ...paraTemplate(r),
+      organization_nome: ((r.organizations as Record<string, unknown> | null)?.nome as string) ?? null,
+    }));
+  },
+
+  /**
+   * Atribuição em LOTE (superadmin): cria a linha do modelo para
+   * cada tenant escolhido, saltando os que já o têm (dedup
+   * client-side — não há índice único (org, template_key)).
+   * is_default=true limpa o default anterior de cada org alvo
+   * ANTES de inserir (ordem de segurança do índice único parcial).
+   * Devolve contadores para feedback honesto na UI.
+   */
+  async criarEmLote(input: {
+    organization_ids: string[];
+    template_key: PdfTemplateId;
+    nome?: string;
+    origem?: OrigemTemplate;
+    is_default?: boolean;
+  }): Promise<{ criadas: number; ignoradas: number }> {
+    // 1. dedup: orgs que já têm este modelo base
+    const { data: existentes, error: errEx } = await supabase
+      .from(TABELA)
+      .select('organization_id')
+      .eq('template_key', input.template_key)
+      .in('organization_id', input.organization_ids);
+    if (errEx) throw new Error(errEx.message);
+    const jaTem = new Set((existentes ?? []).map(r => r.organization_id as string));
+    const aCriar = input.organization_ids.filter(id => !jaTem.has(id));
+    if (aCriar.length === 0) {
+      return { criadas: 0, ignoradas: input.organization_ids.length };
+    }
+
+    // 2. limpar defaults anteriores das orgs alvo (se aplicável)
+    if (input.is_default) {
+      const { error: errLimpar } = await supabase
+        .from(TABELA)
+        .update({ is_default: false })
+        .in('organization_id', aCriar)
+        .eq('is_default', true);
+      if (errLimpar) throw new Error(errLimpar.message);
+    }
+
+    // 3. inserir as novas linhas
+    const nome = input.nome?.trim() || obterTemplateInfo(input.template_key).nome;
+    const rows = aCriar.map(orgId => ({
+      organization_id: orgId,
+      template_key: input.template_key,
+      nome,
+      origem: input.origem ?? 'adquirido',
+      is_active: true,
+      is_default: input.is_default ?? false,
+    }));
+    const { error } = await supabase.from(TABELA).insert(rows);
+    if (error) throw new Error(error.message);
+    return { criadas: aCriar.length, ignoradas: jaTem.size };
   },
 
   /**

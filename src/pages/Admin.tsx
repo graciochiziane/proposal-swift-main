@@ -9,11 +9,12 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Activity, Users, Building2, Shield, LayoutTemplate } from 'lucide-react';
+import { Activity, Users, Building2, Shield, LayoutTemplate, FileText } from 'lucide-react';
 import { MetricsTab } from './admin/MetricsTab';
 import { UsersTab } from './admin/UsersTab';
 import { TenantsTab } from './admin/TenantsTab';
 import { AuditTab } from './admin/AuditTab';
+import { TemplatesTab } from './admin/TemplatesTab';
 import { useAdminTenants } from './admin/hooks/useAdminTenants';
 
 export default function Admin() {
@@ -78,6 +79,10 @@ export default function Admin() {
             <Building2 className="h-4 w-4" />
             Tenants
           </TabsTrigger>
+          <TabsTrigger value="templates" className="gap-2">
+            <FileText className="h-4 w-4" />
+            Modelos
+          </TabsTrigger>
           <TabsTrigger value="audit" className="gap-2">
             <Shield className="h-4 w-4" />
             Auditoria
@@ -87,6 +92,7 @@ export default function Admin() {
         {activeTab === 'metrics' && <MetricsTab activeTab={activeTab} />}
         {activeTab === 'users' && <UsersTab />}
         {activeTab === 'tenants' && <TenantsTab />}
+        {activeTab === 'templates' && <TemplatesTab tenants={allTenants} />}
         {activeTab === 'audit' && <AuditTab tenants={allTenants} />}
       </Tabs>
     </div>
