@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Loader2, AlertCircle, Users, ChevronRight,
   Phone, Mail, Building2, Clock, Tag as TagIcon, X,
+  LayoutGrid, List,
 } from 'lucide-react';
 import { CrmService, type ClienteWithCRM, type CrmEstado, type CrmTag } from '@/services/crmService';
 import { Card, CardContent } from '@/components/ui/card';
@@ -42,6 +43,18 @@ function timeAgo(dateStr: string | null): string {
   return `Há ${Math.floor(days / 30)} mês`;
 }
 
+// Tipo de vista da lista de contactos (preferência persistida localmente)
+type VistaContactos = 'cartoes' | 'lista';
+const VISTA_STORAGE_KEY = 'crm-contactos-vista';
+
+function lerVistaInicial(): VistaContactos {
+  try {
+    return localStorage.getItem(VISTA_STORAGE_KEY) === 'lista' ? 'lista' : 'cartoes';
+  } catch {
+    return 'cartoes';
+  }
+}
+
 export default function CRMContactos() {
   const navigate = useNavigate();
   const [clientes, setClientes] = useState<ClienteWithCRM[]>([]);
@@ -49,6 +62,12 @@ export default function CRMContactos() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filterEstado, setFilterEstado] = useState<CrmEstado | ''>('');
+  const [vista, setVista] = useState<VistaContactos>(lerVistaInicial);
+
+  const mudarVista = (v: VistaContactos) => {
+    setVista(v);
+    try { localStorage.setItem(VISTA_STORAGE_KEY, v); } catch { /* storage indisponível */ }
+  };
 
   // Item 4 — tags: filtragem + gestão
   const [tags, setTags] = useState<CrmTag[]>([]);
@@ -207,6 +226,29 @@ export default function CRMContactos() {
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
+        {/* Alternador de vista: cartões / lista */}
+        <div className="flex items-center rounded-lg border border-border overflow-hidden" role="group" aria-label="Tipo de vista">
+          <button
+            type="button"
+            onClick={() => mudarVista('cartoes')}
+            aria-label="Vista em cartões"
+            aria-pressed={vista === 'cartoes'}
+            title="Vista em cartões"
+            className={`p-2 transition-colors ${vista === 'cartoes' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => mudarVista('lista')}
+            aria-label="Vista em lista"
+            aria-pressed={vista === 'lista'}
+            title="Vista em lista"
+            className={`p-2 transition-colors ${vista === 'lista' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}`}
+          >
+            <List className="h-4 w-4" />
+          </button>
+        </div>
         <Button variant="outline" onClick={() => setShowTagsModal(true)} className="gap-2">
           <TagIcon className="h-4 w-4" />Tags
         </Button>
@@ -229,9 +271,9 @@ export default function CRMContactos() {
             </p>
           </CardContent>
         </Card>
-      ) : (
-        /* List */
-        <div className="space-y-3">
+      ) : vista === 'cartoes' ? (
+        /* Vista em cartões compactos (grelha responsiva) */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map((c) => {
             const estado = ESTADO_CONFIG[c.estado_comercial] ?? ESTADO_CONFIG.novo;
             return (
@@ -240,79 +282,151 @@ export default function CRMContactos() {
                 className="hover:border-primary/30 transition-colors cursor-pointer"
                 onClick={() => navigate(`/crm/contactos/${c.id}`)}
               >
-                <CardContent className="p-4 md:p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      {/* Nome + estado */}
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h3 className="font-semibold truncate">{c.nome}</h3>
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${estado.bg} ${estado.cor}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${estado.dot}`} />
-                          {estado.label}
-                        </span>
-                      </div>
+                <CardContent className="p-3 space-y-2">
+                  {/* Nome + estado (ponto) */}
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-semibold truncate leading-tight">{c.nome}</h3>
+                    <span className={`h-2 w-2 rounded-full shrink-0 mt-1.5 ${estado.dot}`} title={estado.label} />
+                  </div>
 
-                      {/* Empresa */}
-                      {c.empresa && (
-                        <div className="flex items-center gap-1 text-sm text-muted-foreground mb-2">
-                          <Building2 className="h-3.5 w-3.5" />
-                          <span className="truncate">{c.empresa}</span>
-                          {c.cargo && <span className="text-xs">· {c.cargo}</span>}
+                  {/* Estado + empresa */}
+                  <div className="space-y-1 min-w-0">
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${estado.bg} ${estado.cor}`}>
+                      {estado.label}
+                    </span>
+                    {c.empresa && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+                        <Building2 className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{c.empresa}{c.cargo ? ` · ${c.cargo}` : ''}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Contacto */}
+                  {(c.telefone || c.email) && (
+                    <div className="space-y-0.5 text-xs text-muted-foreground/80 min-w-0">
+                      {c.telefone && (
+                        <div className="flex items-center gap-1">
+                          <Phone className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{c.telefone}</span>
                         </div>
                       )}
-
-                      {/* Contacto */}
-                      <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground/70">
-                        {c.telefone && (
-                          <span className="flex items-center gap-1">
-                            <Phone className="h-3 w-3" />
-                            {c.telefone}
-                          </span>
-                        )}
-                        {c.email && (
-                          <span className="flex items-center gap-1">
-                            <Mail className="h-3 w-3" />
-                            {c.email}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Tags */}
-                      {c.tags && c.tags.length > 0 && (
-                        <div className="flex items-center gap-1 flex-wrap mt-2">
-                          {c.tags.map(tag => (
-                            <span
-                              key={tag.id}
-                              className="px-2 py-0.5 rounded text-xs font-medium"
-                              style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                            >
-                              {tag.name}
-                            </span>
-                          ))}
+                      {c.email && (
+                        <div className="flex items-center gap-1">
+                          <Mail className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{c.email}</span>
                         </div>
                       )}
                     </div>
+                  )}
 
-                    {/* Right: commercial data */}
-                    <div className="text-right shrink-0 space-y-1">
+                  {/* Tags (máx. 3 + contador) */}
+                  {c.tags && c.tags.length > 0 && (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {c.tags.slice(0, 3).map(tag => (
+                        <span
+                          key={tag.id}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                          style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                        >
+                          {tag.name}
+                        </span>
+                      ))}
+                      {c.tags.length > 3 && (
+                        <span className="text-[10px] text-muted-foreground">+{c.tags.length - 3}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Rodapé: valor potencial + último contacto */}
+                  <div className="flex items-end justify-between gap-2 pt-1.5 border-t border-border">
+                    <div className="min-w-0">
                       {c.valor_potencial > 0 && (
-                        <div>
-                          <div className="text-sm font-semibold text-emerald-600">
-                            {formatMZN(c.valor_potencial)}
-                          </div>
-                          <div className="text-xs text-muted-foreground">Valor potencial</div>
+                        <div className="text-xs font-semibold text-emerald-600 truncate">
+                          {formatMZN(c.valor_potencial)}
                         </div>
                       )}
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
+                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Clock className="h-3 w-3" />
                         {timeAgo(c.ultimo_contacto)}
                       </div>
                     </div>
-
-                    <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 self-end" />
                   </div>
                 </CardContent>
               </Card>
+            );
+          })}
+        </div>
+      ) : (
+        /* Vista em lista densa */
+        <div className="rounded-lg border border-border bg-card divide-y divide-border">
+          {filtered.map((c) => {
+            const estado = ESTADO_CONFIG[c.estado_comercial] ?? ESTADO_CONFIG.novo;
+            return (
+              <div
+                key={c.id}
+                className="flex items-center gap-3 px-3 py-2 hover:bg-secondary/50 transition-colors cursor-pointer"
+                onClick={() => navigate(`/crm/contactos/${c.id}`)}
+              >
+                <span className={`h-2 w-2 rounded-full shrink-0 ${estado.dot}`} title={estado.label} />
+
+                {/* Nome + empresa */}
+                <div className="flex-1 min-w-0 flex items-baseline gap-2">
+                  <span className="text-sm font-medium truncate">{c.nome}</span>
+                  {c.empresa && (
+                    <span className="text-xs text-muted-foreground truncate hidden md:inline">
+                      {c.empresa}
+                    </span>
+                  )}
+                </div>
+
+                {/* Tags */}
+                {c.tags && c.tags.length > 0 && (
+                  <div className="hidden xl:flex items-center gap-1 shrink-0">
+                    {c.tags.slice(0, 2).map(tag => (
+                      <span
+                        key={tag.id}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                        style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                      >
+                        {tag.name}
+                      </span>
+                    ))}
+                    {c.tags.length > 2 && (
+                      <span className="text-[10px] text-muted-foreground">+{c.tags.length - 2}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Contacto */}
+                <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                  {c.telefone && (
+                    <span className="flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      {c.telefone}
+                    </span>
+                  )}
+                  {c.email && (
+                    <span className="hidden lg:flex items-center gap-1 max-w-[200px]">
+                      <Mail className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{c.email}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Dados comerciais */}
+                {c.valor_potencial > 0 && (
+                  <span className="text-sm font-semibold text-emerald-600 shrink-0">
+                    {formatMZN(c.valor_potencial)}
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">
+                  {timeAgo(c.ultimo_contacto)}
+                </span>
+
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              </div>
             );
           })}
         </div>
