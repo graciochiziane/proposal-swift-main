@@ -11,9 +11,13 @@
 // — o resolver ignora a origem (cadeia de fallback intacta).
 //
 // Segurança: TODAS as queries passam pela RLS da tabela
-// organization_templates (user_belongs_to_org por linha) — o
-// organizationId recebido é, no máximo, uma dica de UX; um
-// pedido que tente ler templates de outra org devolve 0 linhas.
+// organization_templates. Desde a migration
+// 20261009000000, a ESCRITA (atribuir/default/ligar/apagar)
+// é exclusiva do platform admin (superadmin) — membros de org
+// só têm SELECT das próprias linhas (usado pelos seletores para
+// filtrar o catálogo visível). O organizationId recebido é,
+// no máximo, uma dica de UX; um pedido que tente ler templates
+// de outra org devolve 0 linhas.
 //
 // Regra de degradação: nenhuma função lança por falha de leitura;
 // o resolver devolve sempre um PdfTemplateId válido (fallback).
@@ -97,6 +101,25 @@ export const OrganizationTemplateService = {
   ): Promise<PdfTemplateId> {
     return resolverTemplateParaOrg(organizationId, fallback, (orgId) =>
       OrganizationTemplateService.consultarTemplateDefault(orgId));
+  },
+
+  /**
+   * Chaves dos modelos ATRIBUÍDOS e ACTIVOS à org (para filtrar
+   * o catálogo visível nos seletores do tenant). RLS filtra
+   * linhas alheias → []. Nunca lança (erro → lista vazia).
+   */
+  async chavesAtribuidasAtivas(organizationId: string): Promise<string[]> {
+    try {
+      const { data, error } = await supabase
+        .from(TABELA)
+        .select('template_key')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true);
+      if (error) return [];
+      return (data ?? []).map(r => r.template_key as string);
+    } catch {
+      return [];
+    }
   },
 
   /** Lista as linhas da org (default primeiro). Lança em erro de leitura. */

@@ -13,10 +13,11 @@
 // violeta) de ADQUIRIDOS (catálogo — badge azul), com filtro e
 // contadores por origem. Metadado visual: o resolver ignora.
 //
-// Segurança: todas as operações passam pela RLS da tabela
-// (owner/admin da org ou platform admin); o id do tenant é
-// apenas um hint de UX — um admin que tente gerir a org de
-// outro tenant recebe erro de policy, não efeito.
+// Segurança: todas as operações passam pela RLS da tabela.
+// Desde a migration 20261009000000, a ESCRITA é exclusiva do
+// platform admin (superadmin) — membros/owners de org só têm
+// SELECT das próprias linhas. Esta aba vive no TenantDetailPage,
+// que já exige platform admin (verificação isAdmin interna).
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react';
