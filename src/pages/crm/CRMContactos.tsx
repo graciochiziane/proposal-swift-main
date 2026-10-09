@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Loader2, AlertCircle, Users, ChevronRight,
   Phone, Mail, Building2, Clock, Tag as TagIcon, X,
-  LayoutGrid, List,
+  LayoutGrid, List, FilePlus,
 } from 'lucide-react';
 import { CrmService, type ClienteWithCRM, type CrmEstado, type CrmTag } from '@/services/crmService';
 import { Card, CardContent } from '@/components/ui/card';
@@ -338,7 +338,7 @@ export default function CRMContactos() {
                     </div>
                   )}
 
-                  {/* Rodapé: valor potencial + último contacto */}
+                  {/* Rodapé: valor potencial + último contacto + nova proposta */}
                   <div className="flex items-end justify-between gap-2 pt-1.5 border-t border-border">
                     <div className="min-w-0">
                       {c.valor_potencial > 0 && (
@@ -351,7 +351,19 @@ export default function CRMContactos() {
                         {timeAgo(c.ultimo_contacto)}
                       </div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 self-end" />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      title="Nova proposta para este contacto"
+                      className="h-7 px-2 text-xs gap-1 shrink-0"
+                      onClick={e => {
+                        e.stopPropagation();
+                        navigate(`/proposta/nova?cliente=${c.id}`);
+                      }}
+                    >
+                      <FilePlus className="h-3.5 w-3.5" />
+                      Proposta
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -424,6 +436,22 @@ export default function CRMContactos() {
                 <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">
                   {timeAgo(c.ultimo_contacto)}
                 </span>
+
+                {/* Nova proposta a partir do contacto */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title="Nova proposta para este contacto"
+                  aria-label={`Nova proposta para ${c.nome}`}
+                  className="h-7 px-2 text-xs gap-1 shrink-0"
+                  onClick={e => {
+                    e.stopPropagation();
+                    navigate(`/proposta/nova?cliente=${c.id}`);
+                  }}
+                >
+                  <FilePlus className="h-3.5 w-3.5" />
+                  <span className="hidden lg:inline">Proposta</span>
+                </Button>
 
                 <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
               </div>

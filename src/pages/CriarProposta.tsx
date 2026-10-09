@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Trash2, Bookmark, Loader2, UserPlus } from 'lucide-react';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
@@ -14,6 +14,9 @@ import type { ItemProposta, DescontoTipo, Cliente, CatalogoItem } from '@/types'
 export default function CriarProposta() {
   const navigate = useNavigate();
   const { id } = useParams();
+  // Pré-selecção de cliente ao abrir a partir de um contacto (?cliente=<id>)
+  const [searchParams] = useSearchParams();
+  const clienteParam = searchParams.get('cliente');
 
   const [existente, setExistente] = useState<PropostaCompleta | null>(null);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -65,6 +68,11 @@ export default function CriarProposta() {
 
         setClientes(clientesData);
         setCatalogo(catalogoData);
+
+        // Pré-seleccionar o cliente passado por query param (só em criação, não em edição)
+        if (!proposta && clienteParam && clientesData.some(cl => cl.id === clienteParam)) {
+          setClienteId(clienteParam);
+        }
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
         toast.error('Erro ao carregar dados');
@@ -73,7 +81,7 @@ export default function CriarProposta() {
       }
     }
     loadData();
-  }, [id]);
+  }, [id, clienteParam]);
 
   const subtotal = useMemo(() => calcularSubtotal(itens), [itens]);
   const totais = useMemo(

@@ -7,7 +7,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Phone, Mail, Building2, MessageCircle, Edit3,
   Loader2, AlertCircle, FileText, Clock, Calendar,
-  Plus, Check, ChevronRight,
+  Plus, Check, ChevronRight, FilePlus,
 } from 'lucide-react';
 import { CrmService, type ClienteWithCRM, type CrmActivity, type CrmFollowUp, type CrmEstado, type CrmActivityType, type CrmOrigem, type CrmTag } from '@/services/crmService';
 import { MemberService, type MemberWithProfile } from '@/services/memberService';
@@ -361,6 +361,9 @@ export default function ClienteDetalhe() {
                   <option key={key} value={key}>{label}</option>
                 ))}
               </select>
+              <Button size="sm" className="gap-2" onClick={() => navigate(`/proposta/nova?cliente=${cliente.id}`)}>
+                <FilePlus className="h-4 w-4" />Nova Proposta
+              </Button>
               <Button variant="outline" size="sm" onClick={() => navigate(`/clientes`)} className="gap-2">
                 <Edit3 className="h-4 w-4" />Editar
               </Button>
