@@ -1,20 +1,18 @@
 import { supabase } from '@/integrations/supabase/client';
 import { calcularSubtotal, calcularTotal } from '@/lib/calculos';
-import type { ItemProposta, DescontoTipo, Proposta } from '@/types';
+import type { ItemProposta, DescontoTipo, Proposta, StatusProposta } from '@/types';
 import type { Database } from '@/integrations/supabase/types';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { OrganizationService } from './organizationService';
 
 // ── Supabase type aliases ──
 type ProposalRow = Database['public']['Tables']['proposals']['Row'];
 type ProposalInsert = Database['public']['Tables']['proposals']['Insert'];
 type ProposalItemRow = Database['public']['Tables']['proposal_items']['Row'];
 type ProposalItemInsert = Database['public']['Tables']['proposal_items']['Insert'];
-type ProposalStatus = Database['public']['Enums']['proposal_status'];
 
 // Interface para o resultado do JOIN proposals + clients
-interface ProposalWithClient extends ProposalRow {
-  clients?: { id: string; nome: string; email?: string | null; telefone?: string | null } | null;
-}
+// (removida: o select com colunas explícitas + relationships do types.ts
+// regenerado já infere o tipo correcto — anotação manual causava TS2345)
 
 // -------------------------------------------
 // Utility: formatar valor como MZN
@@ -46,11 +44,13 @@ export interface PropostaResumo {
   clienteEmpresa: string;
   data: string;
   total: number;
-  status: string;
+  status: StatusProposta;
+  // Observações da proposta — usada pelo filtro de busca em Propostas.tsx
+  observacoes?: string;
   created_at: string;
 }
 
-/** Proposta completa com items (Resumo, Edição, PDF) */
+/** Proposta completa com items (Resumo, Edição, geração HTML) */
 export interface PropostaCompleta extends Proposta {
   // Já herda tudo do tipo global, incluindo itens e snapshots
 }
@@ -74,15 +74,6 @@ interface ClientRelation {
   empresa: string;
 }
 
-interface DbProposalItem {
-  id: string;
-  nome: string;
-  quantidade: number;
-  preco_unitario: number;
-  subtotal: number;
-  ordem: number;
-}
-
 export const PropostaService = {
 
   /**
@@ -90,10 +81,9 @@ export const PropostaService = {
    * Join com clients(nome, empresa) — uma query, sem busca separada.
    */
   async getPropostas(): Promise<PropostaResumo[]> {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user) return [];
+    const orgId = await OrganizationService.getOrgIdForInsert();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('proposals')
       .select(`
         id,
@@ -102,18 +92,25 @@ export const PropostaService = {
         data,
         total,
         status,
+        observacoes,
         created_at,
+        created_by,
         clients(nome, empresa)
       `)
-      .eq('owner_id', userData.user.id)
       .order('data', { ascending: false });
+
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Erro ao buscar propostas:', error);
       throw error;
     }
 
-    return (data || []).map((p: ProposalWithClient) => {
+    return (data || []).map((p) => {
       const client = p.clients as ClientRelation | null;
       return {
         id: p.id,
@@ -124,6 +121,7 @@ export const PropostaService = {
         data: p.data,
         total: Number(p.total),
         status: p.status,
+        observacoes: p.observacoes ?? '',
         created_at: p.created_at,
       };
     });
@@ -211,10 +209,14 @@ export const PropostaService = {
     const totais = calcularTotal(subtotal, input.descontoTipo, input.descontoValor, input.ivaPercentual);
 
     // 3. Inserir proposta
+    const orgId = await OrganizationService.getOrgIdForInsert();
+
     const { data: proposta, error: propError } = await supabase
       .from('proposals')
       .insert([{
         owner_id: userData.user.id,
+        organization_id: orgId,
+        created_by: userData.user.id,
         client_id: input.clienteId,
         data: input.data,
         observacoes: input.observacoes || null,
@@ -224,7 +226,13 @@ export const PropostaService = {
         iva_percentual: input.ivaPercentual,
         total: totais.total,
         cliente_snapshot: clienteSnapshot,
-      } as ProposalInsert])
+      } as unknown as ProposalInsert])
+      // Cast duplo documentado: `numero` não é passado porque é gerado pelo
+      // trigger set_proposal_numero() quando NULL (ver migration
+      // 20260708010000_multi_tenant_trigger_hardening.sql). O tipo Insert
+      // exige numero (coluna NOT NULL sem default) — o gen types não conhece
+      // triggers. NÃO passar numero: '' (string vazia é NOT NULL e o trigger
+      // preservaria o valor vazio).
       .select()
       .single();
 
@@ -272,7 +280,7 @@ export const PropostaService = {
       ivaPercentual: Number(proposta.iva_percentual),
       total: Number(proposta.total),
       status: proposta.status as Proposta['status'],
-      clienteSnapshot: proposta.cliente_snapshot as ProposalInsert['cliente_snapshot'],
+      clienteSnapshot: proposta.cliente_snapshot as Proposta['clienteSnapshot'],
       itens: itens.map(item => ({
         id: '',
         nome: item.nome,
@@ -312,16 +320,23 @@ export const PropostaService = {
         iva_percentual: input.ivaPercentual,
         total: totais.total,
       } as Partial<ProposalRow>)
-      .eq('id', id)
-      .eq('owner_id', userData.user.id);
+      .eq('id', id);
+      // RLS protege a actualizacao — sem filter owner_id
+      // (na org, qualquer membro pode editar propostas da org)
 
     if (propError) {
       console.error('Erro ao atualizar proposta:', propError);
       throw propError;
     }
 
-    await supabase.from('proposal_items').delete().eq('proposal_id', id);
+    // Buscar IDs dos items antigos antes de qualquer alteração
+    const { data: oldItems } = await supabase
+      .from('proposal_items')
+      .select('id')
+      .eq('proposal_id', id);
+    const oldItemIds = (oldItems || []).map(i => i.id);
 
+    // Inserir novos items primeiro — se falhar, os antigos ficam intactos
     if (itens.length > 0) {
       const itemsToInsert = itens.map((item, index) => ({
         proposal_id: id,
@@ -340,6 +355,11 @@ export const PropostaService = {
         console.error('Erro ao atualizar items:', itemsError);
         throw itemsError;
       }
+    }
+
+    // Apagar só os items antigos (por ID específico)
+    if (oldItemIds.length > 0) {
+      await supabase.from('proposal_items').delete().in('id', oldItemIds);
     }
   },
 

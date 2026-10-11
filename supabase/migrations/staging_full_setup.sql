@@ -1,0 +1,2709 @@
+-- ============================================================
+-- ProposalJa / Proposal Swift — CONSOLIDATED STAGING SQL
+-- ============================================================
+-- Idempotent: safe to re-run on a fresh or existing database.
+-- All CREATE OR REPLACE / IF NOT EXISTS / DO $$ EXCEPTION used.
+--
+-- SYNC 2026-10-01 (sistema de planos/features):
+--   Consolidado neste script, com paridade com as migrações:
+--   - plan_features: tabela + seed + RLS + helpers + RPC
+--     upsert_plan_feature (20260813150000 + seed crm_access 20261001000000)
+--   - plan_limits: RLS UPDATE para admin (20260725120000)
+--   - organizations.suspended_at: coluna exigida pelos triggers
+--     de enforcement (20260725130000, apenas a coluna)
+--   - enforce_client_limit + enforce_ia_generation_limit
+--     (20260814130000)
+--   - enforce_proposal_limit: versão org-aware corrigida
+--     (NEW.organization_id em vez de user_org_id — 20260708010000)
+--   - geracoes_ia_mes: seeds staging (free=3, pro=50) são
+--     INTENCIONALMENTE mais apertados que a default de produção
+--     (2147483647) para permitir testar enforcement em staging;
+--     valores são dados de runtime ajustáveis via Gestão de Planos.
+--
+-- SYNC 2026-10-04 (CRM + RPCs admin):
+--   - SECTION 11: módulo CRM completo (20260814100000) com a RLS
+--     endurecida final (20260903000000: org_has_crm_access
+--     fail-closed) — enums, colunas clients, 4 tabelas CRM,
+--     15 policies, comments. Inclui as 2 funções helper org-scoped
+--     (user_belongs_to_org/user_role_in_org, 20260707010000) de
+--     que as policies CRM dependem.
+--   - SECTION 12: tenant fields + 4 RPCs admin
+--     (20260725000000 §1/§3-7 + 20260725120000 §1/§3 +
+--     20260725140000): colunas organizations (contact_email, nuit,
+--     suspension_reason, monthly_price, notes, last_proposal_
+--     created_at), índices, trigger last_proposal,
+--     admin_toggle_suspend, organization_health_score,
+--     admin_remove_member, admin_platform_metrics e as policies
+--     admin_see_all_orgs/admin_update_orgs/admin_see_all_members.
+--     (admin_audit_log já existia na SECTION 3; plan_limits_admin_
+--     update e geracoes_ia_mes já vieram no SYNC 2026-10-01.)
+--
+-- KNOWN GAPS (ainda NÃO consolidados — diferenças conhecidas
+-- face às migrações; não bloqueiam o teste do CRM nem do painel
+-- admin em staging):
+--   - RLS org-scoped reescritas (20260707010000/20260708000000):
+--     as policies de dados continuam a usar user_org_id/
+--     user_org_role (single-org); apenas as funções helper
+--     user_belongs_to_org/user_role_in_org foram trazidas (SECTION
+--     11) porque as policies CRM delas dependem
+--   - RLS block_suspended_org completa (20260725130000, só a
+--     coluna foi consolidada)
+--   - Advanced proposals / blueprint engine (20260807000000)
+--   - pdf_templates HTML (20260814150000)
+--
+-- ORDER:
+--   1. Types / Enums
+--   2. Utility Functions
+--   3. Base Tables
+--   4. Base RLS (original, pre-multi-user)
+--   5. Base Triggers (original, pre-multi-user)
+--   6. Multi-User Tables
+--   7. Multi-User Functions
+--   8. Data Migration (existing data → org structure)
+--   9. Multi-User RLS (replaces base RLS for key tables)
+--  10. Updated Triggers (org-aware replacements)
+--  11. CRM Business Module (Business-only, fail-closed)
+--  12. Admin Tenant Fields + RPCs (Super Admin panel)
+-- ============================================================
+
+
+-- ============================================================
+-- SECTION 1: TYPES / ENUMS
+-- ============================================================
+
+DO $$ BEGIN
+  CREATE TYPE public.app_role AS ENUM ('admin', 'user');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.plan_tier AS ENUM ('free', 'pro', 'business');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.subscription_status AS ENUM ('active', 'canceled', 'past_due', 'trialing');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.proposal_status AS ENUM ('rascunho', 'enviada', 'aceite', 'rejeitada');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.invoice_status AS ENUM ('pendente', 'paga', 'vencida', 'anulada');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.desconto_tipo AS ENUM ('percentual', 'valor');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- org_role is defined later in SECTION 6 (multi-user) but we
+-- declare the type here so it can be referenced by functions.
+DO $$ BEGIN
+  CREATE TYPE public.org_role AS ENUM ('owner', 'admin', 'member', 'viewer');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+
+-- ============================================================
+-- SECTION 2: UTILITY FUNCTIONS
+-- ============================================================
+
+-- 2a. Auto-set updated_at on row update
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- 2b. Check if user has a given app_role
+CREATE OR REPLACE FUNCTION public.has_role(_user_id UUID, _role public.app_role)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.user_roles
+    WHERE user_id = _user_id AND role = _role
+  )
+$$;
+
+-- 2c. Count IA generations this month for a user
+CREATE OR REPLACE FUNCTION public.count_ia_generations_this_month(p_user_id UUID)
+RETURNS INT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COUNT(*)
+  FROM public.proposta_ai
+  WHERE user_id = p_user_id
+    AND created_at >= date_trunc('month', now())
+$$;
+
+-- 2d. Get IA generation limit for a user's plan
+CREATE OR REPLACE FUNCTION public.get_ia_limit(p_user_id UUID)
+RETURNS INT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT pl.geracoes_ia_mes
+  FROM public.profiles p
+  JOIN public.plan_limits pl ON pl.plano = p.plano
+  WHERE p.id = p_user_id
+$$;
+
+-- 2e. Clean up old user activity (keep last 90 days)
+CREATE OR REPLACE FUNCTION public.cleanup_old_activity()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  DELETE FROM public.user_activity
+  WHERE created_at < now() - interval '90 days';
+END;
+$$;
+
+-- 2f. Auto-generate proposal numero (PROP-YYYYMM-0001 per owner per month)
+CREATE OR REPLACE FUNCTION public.set_proposal_numero()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_numero TEXT;
+  v_seq    INT;
+BEGIN
+  IF NEW.numero IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COUNT(*)
+    INTO v_seq
+  FROM public.proposals
+  WHERE owner_id = NEW.owner_id
+    AND to_char(data, 'YYYY-MM') = to_char(NEW.data, 'YYYY-MM');
+
+  v_numero := 'PROP-'
+    || to_char(NEW.data, 'YYYYMM')
+    || '-'
+    || lpad((v_seq + 1)::text, 4, '0');
+
+  NEW.numero := v_numero;
+  RETURN NEW;
+END;
+$$;
+
+-- 2g. Auto-generate invoice numero (FAT-YYYYMM-0001 per owner per month)
+CREATE OR REPLACE FUNCTION public.set_invoice_numero()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_numero TEXT;
+  v_seq    INT;
+BEGIN
+  IF NEW.numero IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COUNT(*)
+    INTO v_seq
+  FROM public.invoices
+  WHERE owner_id = NEW.owner_id
+    AND to_char(data_emissao, 'YYYY-MM') = to_char(NEW.data_emissao, 'YYYY-MM');
+
+  v_numero := 'FAT-'
+    || to_char(NEW.data_emissao, 'YYYYMM')
+    || '-'
+    || lpad((v_seq + 1)::text, 4, '0');
+
+  NEW.numero := v_numero;
+  RETURN NEW;
+END;
+$$;
+
+-- 2h. Log admin deletions to audit table
+CREATE OR REPLACE FUNCTION public.log_admin_deletion()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_snapshot     JSONB;
+  v_action       TEXT;
+  v_owner_id     UUID;
+BEGIN
+  IF NOT public.has_role(auth.uid(), 'admin') THEN
+    RETURN OLD;
+  END IF;
+
+  CASE TG_TABLE_NAME
+    WHEN 'clients' THEN
+      v_owner_id := OLD.owner_id;
+      v_action   := 'delete_client';
+      v_snapshot := jsonb_build_object(
+        'nome', OLD.nome,
+        'email', OLD.email,
+        'telefone', OLD.telefone,
+        'empresa', OLD.empresa
+      );
+
+    WHEN 'proposals' THEN
+      v_owner_id := OLD.owner_id;
+      v_action   := 'delete_proposal';
+      v_snapshot := jsonb_build_object(
+        'numero', OLD.numero,
+        'client_id', OLD.client_id,
+        'total', OLD.total,
+        'status', OLD.status
+      );
+
+    WHEN 'catalog_items' THEN
+      v_owner_id := OLD.owner_id;
+      v_action   := 'delete_catalog_item';
+      v_snapshot := jsonb_build_object(
+        'nome', OLD.nome,
+        'preco_unitario', OLD.preco_unitario
+      );
+
+    WHEN 'invoices' THEN
+      v_owner_id := OLD.owner_id;
+      v_action   := 'delete_invoice';
+      v_snapshot := jsonb_build_object(
+        'numero', OLD.numero,
+        'total', OLD.total,
+        'status', OLD.status
+      );
+
+    ELSE
+      RETURN OLD;
+  END CASE;
+
+  INSERT INTO public.admin_audit_log
+    (admin_id, action, target_table, target_id, target_owner_id, target_snapshot)
+  VALUES
+    (auth.uid(), v_action, TG_TABLE_NAME, OLD.id, v_owner_id, v_snapshot);
+
+  RETURN OLD;
+END;
+$$;
+
+-- 2i. Enforce proposal plan limit (BASE version — per-user only)
+-- NOTE: This is the original version. It is REPLACED by the
+--       org-aware version in SECTION 10 (multi-user).
+CREATE OR REPLACE FUNCTION public.enforce_proposal_limit()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_plano public.plan_tier;
+  v_count INT;
+  v_reset TIMESTAMPTZ;
+  v_limit INT;
+BEGIN
+  SELECT plano, propostas_mes_count, propostas_mes_reset_at
+    INTO v_plano, v_count, v_reset
+  FROM public.profiles WHERE id = NEW.owner_id FOR UPDATE;
+
+  IF v_plano IS NULL THEN
+    RAISE EXCEPTION 'Profile not found for user %', NEW.owner_id;
+  END IF;
+
+  IF now() >= v_reset THEN
+    v_count := 0;
+    v_reset := date_trunc('month', now()) + INTERVAL '1 month';
+  END IF;
+
+  SELECT propostas_mes INTO v_limit FROM public.plan_limits WHERE plano = v_plano;
+
+  IF v_count >= v_limit THEN
+    RAISE EXCEPTION 'PLAN_LIMIT_REACHED: limite de % propostas/mês atingido no plano %', v_limit, v_plano
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  UPDATE public.profiles
+    SET propostas_mes_count = v_count + 1,
+        propostas_mes_reset_at = v_reset
+    WHERE id = NEW.owner_id;
+
+  RETURN NEW;
+END;
+$$;
+
+-- 2j. Handle new user signup (BASE version — no org creation)
+-- NOTE: This is the original version. It is REPLACED by the
+--       org-aware version in SECTION 10 (multi-user).
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_is_admin BOOLEAN;
+BEGIN
+  v_is_admin := lower(NEW.email) = 'graciochiziane@gmail.com';
+
+  INSERT INTO public.profiles (id, email, nome)
+  VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'nome', ''));
+
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (NEW.id, CASE WHEN v_is_admin THEN 'admin'::public.app_role ELSE 'user'::public.app_role END);
+
+  INSERT INTO public.subscriptions (user_id, plano, status, provider)
+  VALUES (NEW.id, 'free', 'active', 'manual');
+
+  RETURN NEW;
+END;
+$$;
+
+
+-- ============================================================
+-- SECTION 3: BASE TABLES
+-- ============================================================
+
+-- 3a. PROFILES
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  nome TEXT DEFAULT '',
+  cargo TEXT DEFAULT '',
+  empresa TEXT DEFAULT '',
+  contacto TEXT DEFAULT '',
+  nuit TEXT DEFAULT '',
+  endereco TEXT DEFAULT '',
+  logotipo_url TEXT DEFAULT '',
+  cor_primaria TEXT DEFAULT '#0B5394',
+  dados_bancarios JSONB NOT NULL DEFAULT '{"ativo":false,"banco":"","numeroConta":"","nib":""}'::jsonb,
+  mobile_money JSONB NOT NULL DEFAULT '{"mpesa":{"ativo":false,"numero":""},"emola":{"ativo":false,"numero":""},"mkesh":{"ativo":false,"numero":""}}'::jsonb,
+  pagamentos_extras JSONB NOT NULL DEFAULT '[]'::jsonb,
+  plano public.plan_tier NOT NULL DEFAULT 'free',
+  propostas_mes_count INT NOT NULL DEFAULT 0,
+  propostas_mes_reset_at TIMESTAMPTZ NOT NULL DEFAULT date_trunc('month', now()) + INTERVAL '1 month',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Added by admin_metrics migration
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+
+-- Added by multi-user migration (column added here for convenience;
+-- FK enforced after organizations table is created in SECTION 6)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS organization_id UUID;
+
+CREATE INDEX IF NOT EXISTS idx_profiles_last_seen
+  ON public.profiles (last_seen_at DESC);
+
+
+-- 3b. USER ROLES
+CREATE TABLE IF NOT EXISTS public.user_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role public.app_role NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, role)
+);
+
+
+-- 3c. SUBSCRIPTIONS
+CREATE TABLE IF NOT EXISTS public.subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  plano public.plan_tier NOT NULL DEFAULT 'free',
+  status public.subscription_status NOT NULL DEFAULT 'active',
+  provider TEXT NOT NULL DEFAULT 'manual',
+  provider_subscription_id TEXT,
+  current_period_start TIMESTAMPTZ DEFAULT now(),
+  current_period_end TIMESTAMPTZ,
+  cancel_at_period_end BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+-- 3d. PLAN LIMITS (lookup table)
+CREATE TABLE IF NOT EXISTS public.plan_limits (
+  plano public.plan_tier PRIMARY KEY,
+  propostas_mes INT NOT NULL,
+  clientes_max INT,
+  templates_pdf TEXT[] NOT NULL DEFAULT ARRAY['classic'],
+  geracoes_ia_mes INT NOT NULL DEFAULT 3
+);
+
+-- Seed plan limits (idempotent upsert)
+INSERT INTO public.plan_limits (plano, propostas_mes, clientes_max, templates_pdf, geracoes_ia_mes) VALUES
+  ('free', 5, 10, ARRAY['classic'], 3),
+  ('pro', 2147483647, NULL, ARRAY['classic','modern'], 50),
+  ('business', 2147483647, NULL, ARRAY['classic','modern','executive'], 2147483647)
+ON CONFLICT (plano) DO UPDATE SET
+  propostas_mes = EXCLUDED.propostas_mes,
+  clientes_max = EXCLUDED.clientes_max,
+  templates_pdf = EXCLUDED.templates_pdf,
+  geracoes_ia_mes = EXCLUDED.geracoes_ia_mes;
+
+-- Safety net: add column if table was created without it
+ALTER TABLE public.plan_limits
+  ADD COLUMN IF NOT EXISTS geracoes_ia_mes INT NOT NULL DEFAULT 3;
+
+-- Update existing rows if column was just added
+UPDATE public.plan_limits SET geracoes_ia_mes = 3 WHERE plano = 'free' AND geracoes_ia_mes IS NULL;
+UPDATE public.plan_limits SET geracoes_ia_mes = 50 WHERE plano = 'pro' AND geracoes_ia_mes IS NULL;
+UPDATE public.plan_limits SET geracoes_ia_mes = 2147483647 WHERE plano = 'business' AND geracoes_ia_mes IS NULL;
+
+
+-- 3d-2. PLAN FEATURES (feature flags por plano)
+-- Mirrors 20260813150000 + seed crm_access (20261001000000).
+-- Cada par (plano, feature_key) define se uma feature está activa
+-- e o seu limite (NULL = ilimitado).
+CREATE TABLE IF NOT EXISTS public.plan_features (
+    plano public.plan_tier NOT NULL,
+    feature_key TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT false,
+    limit_value INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT plan_features_pkey PRIMARY KEY (plano, feature_key),
+    CONSTRAINT plan_features_feature_key_check CHECK (
+        feature_key ~ '^[a-z][a-z0-9_]*$'
+        AND length(feature_key) BETWEEN 3 AND 50
+    )
+);
+
+CREATE INDEX IF NOT EXISTS plan_features_plano_idx
+    ON public.plan_features(plano) WHERE enabled = true;
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_plan_features_updated_at
+    BEFORE UPDATE ON public.plan_features
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Seed: features conhecidas. ON CONFLICT DO NOTHING preserva
+-- alterações feitas pelo admin via Gestão de Features.
+INSERT INTO public.plan_features (plano, feature_key, enabled, limit_value) VALUES
+    ('free',      'advanced_proposals', true,  NULL),
+    ('pro',       'advanced_proposals', true,  NULL),
+    ('business',  'advanced_proposals', true,  NULL),
+    ('free',      'custom_branding',    false, NULL),
+    ('pro',       'custom_branding',    true,  NULL),
+    ('business',  'custom_branding',    true,  NULL),
+    ('free',      'multi_user',         true,  3),
+    ('pro',       'multi_user',         true,  10),
+    ('business',  'multi_user',         true,  NULL),
+    ('free',      'api_access',         false, NULL),
+    ('pro',       'api_access',         false, NULL),
+    ('business',  'api_access',         true,  NULL),
+    ('free',      'pdf_export',         true,  NULL),
+    ('pro',       'pdf_export',         true,  NULL),
+    ('business',  'pdf_export',         true,  NULL),
+    ('free',      'crm_access',         false, NULL),
+    ('pro',       'crm_access',         false, NULL),
+    ('business',  'crm_access',         true,  NULL)
+ON CONFLICT (plano, feature_key) DO NOTHING;
+
+
+-- 3e. CLIENTS
+CREATE TABLE IF NOT EXISTS public.clients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  email TEXT DEFAULT '',
+  telefone TEXT DEFAULT '',
+  empresa TEXT DEFAULT '',
+  nuit TEXT DEFAULT '',
+  endereco TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_clients_owner ON public.clients(owner_id);
+
+-- Added by multi-user migration
+ALTER TABLE public.clients
+  ADD COLUMN IF NOT EXISTS organization_id UUID;
+
+
+-- 3f. CATALOG ITEMS
+CREATE TABLE IF NOT EXISTS public.catalog_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  preco_unitario NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_owner ON public.catalog_items(owner_id);
+
+-- Added by multi-user migration
+ALTER TABLE public.catalog_items
+  ADD COLUMN IF NOT EXISTS organization_id UUID;
+
+-- Unique constraint for upsert by name per owner
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'catalog_items_owner_nome_unique'
+  ) THEN
+    ALTER TABLE public.catalog_items
+    ADD CONSTRAINT catalog_items_owner_nome_unique
+    UNIQUE (owner_id, nome);
+  END IF;
+END $$;
+
+
+-- 3g. PROPOSALS
+CREATE TABLE IF NOT EXISTS public.proposals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE RESTRICT,
+  numero TEXT,
+  data DATE NOT NULL DEFAULT CURRENT_DATE,
+  subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+  desconto_tipo public.desconto_tipo NOT NULL DEFAULT 'percentual',
+  desconto_valor NUMERIC(12,2) NOT NULL DEFAULT 0,
+  iva_percentual NUMERIC(5,2) NOT NULL DEFAULT 16,
+  total NUMERIC(12,2) NOT NULL DEFAULT 0,
+  observacoes TEXT DEFAULT '',
+  status public.proposal_status NOT NULL DEFAULT 'rascunho',
+  cliente_snapshot JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_proposals_owner ON public.proposals(owner_id);
+CREATE INDEX IF NOT EXISTS idx_proposals_client ON public.proposals(client_id);
+CREATE INDEX IF NOT EXISTS idx_proposals_owner_status ON public.proposals(owner_id, status);
+CREATE INDEX IF NOT EXISTS idx_proposals_owner_data ON public.proposals(owner_id, data DESC);
+
+-- Added by multi-user migration
+ALTER TABLE public.proposals
+  ADD COLUMN IF NOT EXISTS organization_id UUID,
+  ADD COLUMN IF NOT EXISTS created_by UUID;
+
+-- Make numero NOT NULL + UNIQUE (safe: only applies if column has no NULLs)
+DO $$
+BEGIN
+  -- Backfill: assign numbers to existing proposals without one
+  DECLARE
+    r RECORD;
+  BEGIN
+    FOR r IN
+      SELECT
+        id,
+        owner_id,
+        data,
+        ROW_NUMBER() OVER (
+          PARTITION BY owner_id, to_char(data, 'YYYY-MM')
+          ORDER BY created_at, id
+        ) AS seq_num
+      FROM public.proposals
+      WHERE numero IS NULL
+        AND data IS NOT NULL
+      ORDER BY owner_id, data, created_at
+    LOOP
+      UPDATE public.proposals
+      SET numero = 'PROP-'
+        || to_char(r.data, 'YYYYMM')
+        || '-'
+        || lpad(r.seq_num::text, 4, '0')
+      WHERE id = r.id;
+    END LOOP;
+  END;
+END $$;
+
+DO $$
+BEGIN
+  -- Only set NOT NULL if no NULLs remain
+  IF NOT EXISTS (SELECT 1 FROM public.proposals WHERE numero IS NULL) THEN
+    ALTER TABLE public.proposals ALTER COLUMN numero SET NOT NULL;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'proposals_numero_owner_unique'
+  ) THEN
+    ALTER TABLE public.proposals
+    ADD CONSTRAINT proposals_numero_owner_unique
+    UNIQUE (owner_id, numero);
+  END IF;
+END $$;
+
+
+-- 3h. PROPOSAL ITEMS
+CREATE TABLE IF NOT EXISTS public.proposal_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  proposal_id UUID NOT NULL REFERENCES public.proposals(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  quantidade NUMERIC(12,2) NOT NULL DEFAULT 1,
+  preco_unitario NUMERIC(12,2) NOT NULL DEFAULT 0,
+  subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+  ordem INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_proposal_items_proposal ON public.proposal_items(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_proposal_items_proposal_ordem
+  ON public.proposal_items(proposal_id, ordem);
+
+-- Added by schema_fixes migration
+ALTER TABLE public.proposal_items
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+
+-- 3i. INVOICES
+CREATE TABLE IF NOT EXISTS public.invoices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  proposal_id UUID REFERENCES public.proposals(id) ON DELETE SET NULL,
+  client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE RESTRICT,
+  numero TEXT,
+  data_emissao DATE NOT NULL DEFAULT CURRENT_DATE,
+  data_vencimento DATE,
+  total NUMERIC(12,2) NOT NULL DEFAULT 0,
+  status public.invoice_status NOT NULL DEFAULT 'pendente',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_invoices_owner ON public.invoices(owner_id);
+
+-- Added by multi-user migration
+ALTER TABLE public.invoices
+  ADD COLUMN IF NOT EXISTS organization_id UUID,
+  ADD COLUMN IF NOT EXISTS created_by UUID;
+
+
+-- 3j. INVOICE ITEMS
+CREATE TABLE IF NOT EXISTS public.invoice_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id UUID NOT NULL REFERENCES public.invoices(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  quantidade NUMERIC NOT NULL DEFAULT 1,
+  preco_unitario NUMERIC NOT NULL DEFAULT 0,
+  subtotal NUMERIC NOT NULL DEFAULT 0,
+  ordem INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id
+  ON public.invoice_items(invoice_id);
+
+
+-- 3k. PROPOSTA IA (AI-generated proposals)
+CREATE TABLE IF NOT EXISTS public.proposta_ai (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cotacao_id UUID NOT NULL REFERENCES public.proposals(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  referencia TEXT,
+  mode TEXT NOT NULL DEFAULT 'rapido' CHECK (mode IN ('rapido', 'assertivo')),
+  tone TEXT NOT NULL DEFAULT 'formal' CHECK (tone IN ('formal', 'persuasivo', 'tecnico', 'consultivo')),
+  sector TEXT,
+  input_json JSONB,
+  output_json JSONB,
+  edited_json JSONB,
+  modelo TEXT DEFAULT 'gpt-4o-mini',
+  tokens_usados INTEGER DEFAULT 0,
+  custo_usd NUMERIC(10,6) DEFAULT 0,
+  gerado_em TIMESTAMPTZ,
+  exportado_em TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_proposta_ai_user ON public.proposta_ai(user_id);
+CREATE INDEX IF NOT EXISTS idx_proposta_ai_cotacao ON public.proposta_ai(cotacao_id);
+CREATE INDEX IF NOT EXISTS idx_proposta_ai_created ON public.proposta_ai(created_at DESC);
+
+-- Added by multi-user migration
+ALTER TABLE public.proposta_ai
+  ADD COLUMN IF NOT EXISTS organization_id UUID;
+
+
+-- 3l. USER ACTIVITY (admin metrics)
+CREATE TABLE IF NOT EXISTS public.user_activity (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  page TEXT NOT NULL DEFAULT '/',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_user_activity_created_at
+  ON public.user_activity (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_activity_user_date
+  ON public.user_activity (user_id, created_at DESC);
+
+
+-- 3m. ADMIN AUDIT LOG
+CREATE TABLE IF NOT EXISTS public.admin_audit_log (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_id        UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  action          TEXT        NOT NULL,
+  target_table    TEXT        NOT NULL,
+  target_id       UUID        NOT NULL,
+  target_owner_id UUID,
+  target_snapshot JSONB       DEFAULT '{}',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_admin
+  ON public.admin_audit_log(admin_id);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_target
+  ON public.admin_audit_log(target_table, target_id);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created
+  ON public.admin_audit_log(created_at DESC);
+
+
+-- 3n. SUPABASE STORAGE: Bucket for logos
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'logos',
+  'logos',
+  false,
+  5242880,
+  ARRAY['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+)
+ON CONFLICT (id) DO NOTHING;
+
+
+-- ============================================================
+-- SECTION 4: BASE RLS (original, pre-multi-user)
+-- ============================================================
+
+-- 4a. Enable RLS on all tables
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.catalog_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.proposals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.proposal_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invoice_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.plan_limits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.proposta_ai ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_activity ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_audit_log ENABLE ROW LEVEL SECURITY;
+
+-- 4b. profiles policies
+-- NOTE: "profiles_select_own_or_admin" is DROPPED in SECTION 9 and
+--       replaced by "profiles_select_org". The update policies persist.
+DO $$ BEGIN
+  CREATE POLICY "profiles_select_own_or_admin" ON public.profiles FOR SELECT TO authenticated
+    USING (id = auth.uid() OR public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "profiles_update_own" ON public.profiles FOR UPDATE TO authenticated
+    USING (id = auth.uid()) WITH CHECK (id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "profiles_insert_own" ON public.profiles FOR INSERT TO authenticated
+    WITH CHECK (id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Admin can update any profile
+DO $$ BEGIN
+  CREATE POLICY "profiles_update_admin" ON public.profiles FOR UPDATE TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4c. user_roles policies
+DO $$ BEGIN
+  CREATE POLICY "user_roles_select_own_or_admin" ON public.user_roles FOR SELECT TO authenticated
+    USING (user_id = auth.uid() OR public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "user_roles_admin_manage" ON public.user_roles FOR ALL TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4d. subscriptions policies
+DO $$ BEGIN
+  CREATE POLICY "subs_select_own_or_admin" ON public.subscriptions FOR SELECT TO authenticated
+    USING (user_id = auth.uid() OR public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "subs_admin_manage" ON public.subscriptions FOR ALL TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4e. clients policies
+-- NOTE: "clients_owner_all" is DROPPED in SECTION 9 and replaced by
+--       "clients_org_or_owner".
+DO $$ BEGIN
+  CREATE POLICY "clients_owner_all" ON public.clients FOR ALL TO authenticated
+    USING (owner_id = auth.uid() OR public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (owner_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4f. catalog_items policies
+-- NOTE: "catalog_owner_all" is DROPPED in SECTION 9 and replaced by
+--       "catalog_org_or_owner".
+DO $$ BEGIN
+  CREATE POLICY "catalog_owner_all" ON public.catalog_items FOR ALL TO authenticated
+    USING (owner_id = auth.uid() OR public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (owner_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4g. proposals policies
+-- NOTE: "proposals_owner_all" is DROPPED in SECTION 9 and replaced by
+--       split policies (proposals_select/insert/update/delete).
+DO $$ BEGIN
+  CREATE POLICY "proposals_owner_all" ON public.proposals FOR ALL TO authenticated
+    USING (owner_id = auth.uid() OR public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (owner_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4h. proposal_items policies
+-- NOTE: Both policies are DROPPED in SECTION 9 and replaced by
+--       org-aware versions.
+DO $$ BEGIN
+  CREATE POLICY "proposal_items_select" ON public.proposal_items FOR SELECT TO authenticated
+    USING (EXISTS (SELECT 1 FROM public.proposals p WHERE p.id = proposal_id AND (p.owner_id = auth.uid() OR public.has_role(auth.uid(), 'admin'))));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "proposal_items_modify" ON public.proposal_items FOR ALL TO authenticated
+    USING (EXISTS (SELECT 1 FROM public.proposals p WHERE p.id = proposal_id AND p.owner_id = auth.uid()))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.proposals p WHERE p.id = proposal_id AND p.owner_id = auth.uid()));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4i. invoices policies
+-- NOTE: "invoices_owner_all" is DROPPED in SECTION 9 and replaced by
+--       split policies (invoices_select/insert/update/delete).
+DO $$ BEGIN
+  CREATE POLICY "invoices_owner_all" ON public.invoices FOR ALL TO authenticated
+    USING (owner_id = auth.uid() OR public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (owner_id = auth.uid());
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4j. invoice_items policies
+DO $$ BEGIN
+  CREATE POLICY "ii_owner_select" ON public.invoice_items
+    FOR SELECT USING (
+      invoice_id IN (SELECT id FROM public.invoices WHERE owner_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "ii_owner_insert" ON public.invoice_items
+    FOR INSERT WITH CHECK (
+      invoice_id IN (SELECT id FROM public.invoices WHERE owner_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "ii_owner_update" ON public.invoice_items
+    FOR UPDATE USING (
+      invoice_id IN (SELECT id FROM public.invoices WHERE owner_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "ii_owner_delete" ON public.invoice_items
+    FOR DELETE USING (
+      invoice_id IN (SELECT id FROM public.invoices WHERE owner_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "ii_admin_all" ON public.invoice_items
+    FOR ALL USING (
+      EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4k. plan_limits policy
+DO $$ BEGIN
+  CREATE POLICY "plan_limits_read" ON public.plan_limits FOR SELECT TO authenticated USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4k-2. plan_limits: admin UPDATE (Gestão de Planos)
+-- Mirrors 20260725120000 — permite ao Super Admin editar limites.
+DO $$ BEGIN
+  CREATE POLICY "plan_limits_admin_update" ON public.plan_limits
+    FOR UPDATE TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'))
+    WITH CHECK (public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4k-3. plan_features RLS: leitura para todos authenticated,
+--       escrita apenas platform admins (mirrors 20260813150000)
+ALTER TABLE public.plan_features ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "plan_features_select_all" ON public.plan_features
+    FOR SELECT TO authenticated USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "plan_features_insert_admin" ON public.plan_features
+    FOR INSERT TO authenticated
+    WITH CHECK (public.has_role(auth.uid(), 'admin'::public.app_role));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "plan_features_update_admin" ON public.plan_features
+    FOR UPDATE TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'::public.app_role))
+    WITH CHECK (public.has_role(auth.uid(), 'admin'::public.app_role));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "plan_features_delete_admin" ON public.plan_features
+    FOR DELETE TO authenticated
+    USING (public.has_role(auth.uid(), 'admin'::public.app_role));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4l. proposta_ai policies
+-- NOTE: Both are DROPPED in SECTION 9 and replaced by org-aware versions.
+DO $$ BEGIN
+  CREATE POLICY "Users manage own proposta_ai"
+    ON public.proposta_ai FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admin reads all proposta_ai"
+    ON public.proposta_ai FOR SELECT
+    USING (
+      EXISTS (
+        SELECT 1 FROM public.user_roles
+        WHERE user_id = auth.uid() AND role = 'admin'
+      )
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4m. user_activity policies
+DO $$ BEGIN
+  CREATE POLICY "Users see own activity"
+    ON public.user_activity FOR SELECT
+    USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users insert own activity"
+    ON public.user_activity FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admin sees all activity"
+    ON public.user_activity FOR SELECT
+    USING (
+      EXISTS (
+        SELECT 1 FROM public.user_roles
+        WHERE user_id = auth.uid() AND role = 'admin'
+      )
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4n. admin_audit_log policies
+DO $$ BEGIN
+  CREATE POLICY "audit_log_select" ON public.admin_audit_log
+  FOR SELECT TO authenticated
+  USING (admin_id = auth.uid() OR public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "audit_log_insert" ON public.admin_audit_log
+  FOR INSERT TO authenticated
+  WITH CHECK (public.has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 4o. Storage bucket policies (logos)
+DO $$ BEGIN
+  CREATE POLICY "logos_select_own" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'logos'
+    AND (storage.foldername(name))[1] = auth.uid()::text
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "logos_insert_own" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'logos'
+    AND (storage.foldername(name))[1] = auth.uid()::text
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "logos_update_own" ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (
+    bucket_id = 'logos'
+    AND (storage.foldername(name))[1] = auth.uid()::text
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "logos_delete_own" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'logos'
+    AND (storage.foldername(name))[1] = auth.uid()::text
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "logos_admin_select" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'logos'
+    AND public.has_role(auth.uid(), 'admin')
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "logos_admin_delete" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'logos'
+    AND public.has_role(auth.uid(), 'admin')
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+
+-- ============================================================
+-- SECTION 5: BASE TRIGGERS (original, pre-multi-user)
+-- ============================================================
+
+-- 5a. updated_at auto-triggers
+DROP TRIGGER IF EXISTS trg_profiles_updated_at ON public.profiles;
+CREATE TRIGGER trg_profiles_updated_at BEFORE UPDATE ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_subscriptions_updated_at ON public.subscriptions;
+CREATE TRIGGER trg_subscriptions_updated_at BEFORE UPDATE ON public.subscriptions
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_clients_updated_at ON public.clients;
+CREATE TRIGGER trg_clients_updated_at BEFORE UPDATE ON public.clients
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_catalog_updated_at ON public.catalog_items;
+CREATE TRIGGER trg_catalog_updated_at BEFORE UPDATE ON public.catalog_items
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_proposals_updated_at ON public.proposals;
+CREATE TRIGGER trg_proposals_updated_at BEFORE UPDATE ON public.proposals
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_proposal_items_updated_at ON public.proposal_items;
+CREATE TRIGGER trg_proposal_items_updated_at BEFORE UPDATE ON public.proposal_items
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_invoices_updated_at ON public.invoices;
+CREATE TRIGGER trg_invoices_updated_at BEFORE UPDATE ON public.invoices
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_invoice_items_updated_at ON public.invoice_items;
+CREATE TRIGGER trg_invoice_items_updated_at BEFORE UPDATE ON public.invoice_items
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- 5b. Proposal numero auto-generation (runs before enforce_proposal_limit
+--     due to 'a_' alphabetical ordering of trigger names in PostgreSQL)
+DROP TRIGGER IF EXISTS a_set_proposal_numero ON public.proposals;
+CREATE TRIGGER a_set_proposal_numero
+BEFORE INSERT ON public.proposals
+FOR EACH ROW EXECUTE FUNCTION public.set_proposal_numero();
+
+-- 5c. Invoice numero auto-generation
+DROP TRIGGER IF EXISTS a_set_invoice_numero ON public.invoices;
+CREATE TRIGGER a_set_invoice_numero
+BEFORE INSERT ON public.invoices
+FOR EACH ROW EXECUTE FUNCTION public.set_invoice_numero();
+
+-- 5d. Enforce proposal plan limit (BASE version — per-user)
+-- NOTE: Replaced by org-aware version in SECTION 10.
+DROP TRIGGER IF EXISTS trg_enforce_proposal_limit ON public.proposals;
+CREATE TRIGGER trg_enforce_proposal_limit
+BEFORE INSERT ON public.proposals
+FOR EACH ROW EXECUTE FUNCTION public.enforce_proposal_limit();
+
+-- 5e. Admin deletion audit log triggers
+DROP TRIGGER IF EXISTS trg_audit_clients_delete ON public.clients;
+CREATE TRIGGER trg_audit_clients_delete
+BEFORE DELETE ON public.clients
+FOR EACH ROW EXECUTE FUNCTION public.log_admin_deletion();
+
+DROP TRIGGER IF EXISTS trg_audit_proposals_delete ON public.proposals;
+CREATE TRIGGER trg_audit_proposals_delete
+BEFORE DELETE ON public.proposals
+FOR EACH ROW EXECUTE FUNCTION public.log_admin_deletion();
+
+DROP TRIGGER IF EXISTS trg_audit_catalog_delete ON public.catalog_items;
+CREATE TRIGGER trg_audit_catalog_delete
+BEFORE DELETE ON public.catalog_items
+FOR EACH ROW EXECUTE FUNCTION public.log_admin_deletion();
+
+DROP TRIGGER IF EXISTS trg_audit_invoices_delete ON public.invoices;
+CREATE TRIGGER trg_audit_invoices_delete
+BEFORE DELETE ON public.invoices
+FOR EACH ROW EXECUTE FUNCTION public.log_admin_deletion();
+
+-- 5f. New user signup trigger (BASE version)
+-- NOTE: Function is replaced by org-aware version in SECTION 10.
+--       The trigger itself persists and automatically uses the latest function body.
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+
+-- ============================================================
+-- SECTION 6: MULTI-USER TABLES
+-- ============================================================
+-- Organizations, Members, and Invitations for multi-tenant support.
+
+-- 6a. ORGANIZATIONS
+CREATE TABLE IF NOT EXISTS public.organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nome TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL,
+  logo_url TEXT DEFAULT '',
+  cor_primaria TEXT DEFAULT '#0B5394',
+  endereco TEXT,
+  dados_bancarios JSONB NOT NULL DEFAULT '{"ativo":false,"banco":"","numeroConta":"","nib":""}'::jsonb,
+  mobile_money JSONB NOT NULL DEFAULT '{"mpesa":{"ativo":false,"numero":""},"emola":{"ativo":false,"numero":""},"mkesh":{"ativo":false,"numero":""}}'::jsonb,
+  pagamentos_extras JSONB NOT NULL DEFAULT '[]'::jsonb,
+  plano public.plan_tier NOT NULL DEFAULT 'free',
+  propostas_mes_count INT NOT NULL DEFAULT 0,
+  propostas_mes_reset_at TIMESTAMPTZ NOT NULL DEFAULT date_trunc('month', now()) + INTERVAL '1 month',
+  geracoes_ia_mes_count INT NOT NULL DEFAULT 0,
+  geracoes_ia_mes_reset_at TIMESTAMPTZ NOT NULL DEFAULT date_trunc('month', now()) + INTERVAL '1 month',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_orgs_slug ON public.organizations(slug);
+
+-- Added by block_suspended_org migration (20260725130000) — apenas a
+-- coluna, exigida pelos triggers de enforcement (SECTION 10d/10e);
+-- a RLS completa dessa migration ainda não está consolidada (ver KNOWN GAPS).
+-- NULL = não suspensa: sem alteração de comportamento por si.
+ALTER TABLE public.organizations
+  ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ;
+
+DROP TRIGGER IF EXISTS trg_organizations_updated_at ON public.organizations;
+CREATE TRIGGER trg_organizations_updated_at BEFORE UPDATE ON public.organizations
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+-- 6b. ORGANIZATION MEMBERS
+CREATE TABLE IF NOT EXISTS public.organization_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role public.org_role NOT NULL DEFAULT 'member',
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  invited_by UUID REFERENCES auth.users(id),
+  UNIQUE (organization_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_org_members_user ON public.organization_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_org ON public.organization_members(organization_id);
+
+
+-- 6c. ORGANIZATION INVITATIONS
+CREATE TABLE IF NOT EXISTS public.organization_invitations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role public.org_role NOT NULL DEFAULT 'member',
+  invited_by UUID NOT NULL REFERENCES auth.users(id),
+  accepted_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + INTERVAL '7 days',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_org_invitations_email ON public.organization_invitations(email);
+CREATE INDEX IF NOT EXISTS idx_org_invitations_org ON public.organization_invitations(organization_id);
+
+
+-- 6d. Add FK constraints for organization_id columns added in SECTION 3
+-- (Deferred until now because the organizations table didn't exist yet)
+DO $$
+BEGIN
+  -- profiles.organization_id
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'profiles_organization_id_fkey'
+  ) THEN
+    ALTER TABLE public.profiles
+      ADD CONSTRAINT profiles_organization_id_fkey
+      FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+  END IF;
+
+  -- clients.organization_id
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'clients_organization_id_fkey'
+  ) THEN
+    ALTER TABLE public.clients
+      ADD CONSTRAINT clients_organization_id_fkey
+      FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+  END IF;
+
+  -- catalog_items.organization_id
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'catalog_items_organization_id_fkey'
+  ) THEN
+    ALTER TABLE public.catalog_items
+      ADD CONSTRAINT catalog_items_organization_id_fkey
+      FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+  END IF;
+
+  -- proposals.organization_id
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'proposals_organization_id_fkey'
+  ) THEN
+    ALTER TABLE public.proposals
+      ADD CONSTRAINT proposals_organization_id_fkey
+      FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+  END IF;
+
+  -- proposals.created_by
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'proposals_created_by_fkey'
+  ) THEN
+    ALTER TABLE public.proposals
+      ADD CONSTRAINT proposals_created_by_fkey
+      FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+  END IF;
+
+  -- invoices.organization_id
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'invoices_organization_id_fkey'
+  ) THEN
+    ALTER TABLE public.invoices
+      ADD CONSTRAINT invoices_organization_id_fkey
+      FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+  END IF;
+
+  -- invoices.created_by
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'invoices_created_by_fkey'
+  ) THEN
+    ALTER TABLE public.invoices
+      ADD CONSTRAINT invoices_created_by_fkey
+      FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+  END IF;
+
+  -- proposta_ai.organization_id
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'proposta_ai_organization_id_fkey'
+  ) THEN
+    ALTER TABLE public.proposta_ai
+      ADD CONSTRAINT proposta_ai_organization_id_fkey
+      FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'Some FK constraints may already exist or columns may not exist yet: %', SQLERRM;
+END $$;
+
+
+-- ============================================================
+-- SECTION 7: MULTI-USER FUNCTIONS
+-- ============================================================
+
+-- 7a. Get the organization_id for a user (NULL if no org)
+CREATE OR REPLACE FUNCTION public.user_org_id(_user_id UUID)
+RETURNS UUID
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT organization_id FROM public.organization_members
+  WHERE user_id = _user_id
+  LIMIT 1;
+$$;
+
+-- 7b. Get the org role for a user (NULL if no org)
+CREATE OR REPLACE FUNCTION public.user_org_role(_user_id UUID)
+RETURNS public.org_role
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT role FROM public.organization_members
+  WHERE user_id = _user_id
+  LIMIT 1;
+$$;
+
+-- 7c. Check if user has at least a minimum org role
+--     owner(0) > admin(1) > member(2) > viewer(3)
+CREATE OR REPLACE FUNCTION public.has_org_role_min(_user_id UUID, _min_role public.org_role)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.organization_members
+    WHERE user_id = _user_id
+    AND (
+      CASE role
+        WHEN 'owner' THEN 0
+        WHEN 'admin' THEN 1
+        WHEN 'member' THEN 2
+        WHEN 'viewer' THEN 3
+      END
+    ) <= (
+      CASE _min_role
+        WHEN 'owner' THEN 0
+        WHEN 'admin' THEN 1
+        WHEN 'member' THEN 2
+        WHEN 'viewer' THEN 3
+      END
+    )
+  );
+$$;
+
+-- 7d. Count org proposals this month
+CREATE OR REPLACE FUNCTION public.org_proposals_this_month(_org_id UUID)
+RETURNS INT
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COUNT(*) FROM public.proposals
+  WHERE organization_id = _org_id
+  AND created_at >= date_trunc('month', now())
+$$;
+
+-- 7e. Count org IA generations this month
+CREATE OR REPLACE FUNCTION public.org_ia_generations_this_month(_org_id UUID)
+RETURNS INT
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COUNT(*) FROM public.proposta_ai
+  WHERE organization_id = _org_id
+  AND created_at >= date_trunc('month', now())
+$$;
+
+
+-- 7f. has_plan_feature — verifica se um plano tem uma feature activa
+--     (mirrors 20260813150000; usada por gates de features na BD)
+CREATE OR REPLACE FUNCTION public.has_plan_feature(
+    p_plano public.plan_tier,
+    p_feature_key TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = 'public'
+AS $function$
+    SELECT EXISTS (
+        SELECT 1 FROM public.plan_features
+        WHERE plano = p_plano
+          AND feature_key = p_feature_key
+          AND enabled = true
+    )
+$function$;
+
+-- 7g. get_plan_feature_limit — limit_value de uma feature por plano
+--     (NULL = ilimitado, feature inactiva ou inexistente)
+CREATE OR REPLACE FUNCTION public.get_plan_feature_limit(
+    p_plano public.plan_tier,
+    p_feature_key TEXT
+)
+RETURNS INTEGER
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = 'public'
+AS $function$
+    SELECT limit_value FROM public.plan_features
+    WHERE plano = p_plano
+      AND feature_key = p_feature_key
+      AND enabled = true
+$function$;
+
+-- 7h. get_plan_features — RPC lida pelo frontend (usePlanFeatures)
+CREATE OR REPLACE FUNCTION public.get_plan_features(p_plano public.plan_tier)
+RETURNS TABLE(
+    feature_key TEXT,
+    enabled BOOLEAN,
+    limit_value INTEGER
+)
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = 'public'
+AS $function$
+    SELECT feature_key, enabled, limit_value
+    FROM public.plan_features
+    WHERE plano = p_plano
+    ORDER BY feature_key
+$function$;
+
+-- 7i. upsert_plan_feature — RPC de escrita do Super Admin
+--     (Gestão de Features por Plano). SECURITY DEFINER + has_role.
+CREATE OR REPLACE FUNCTION public.upsert_plan_feature(
+    p_plano public.plan_tier,
+    p_feature_key TEXT,
+    p_enabled BOOLEAN,
+    p_limit_value INTEGER DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+    IF NOT public.has_role(auth.uid(), 'admin'::public.app_role) THEN
+        RAISE EXCEPTION 'Acesso negado: apenas admins de plataforma';
+    END IF;
+
+    INSERT INTO public.plan_features (plano, feature_key, enabled, limit_value)
+    VALUES (p_plano, p_feature_key, p_enabled, p_limit_value)
+    ON CONFLICT (plano, feature_key)
+    DO UPDATE SET
+        enabled = p_enabled,
+        limit_value = p_limit_value,
+        updated_at = now();
+END;
+$$;
+
+-- Escrita apenas para authenticated admin (revoga PUBLIC/anon)
+REVOKE EXECUTE ON FUNCTION public.upsert_plan_feature(public.plan_tier, TEXT, BOOLEAN, INTEGER) FROM PUBLIC, anon;
+
+
+-- ============================================================
+-- SECTION 8: DATA MIGRATION (existing data → org structure)
+-- ============================================================
+-- Each existing user becomes "owner" of their own organization.
+-- Safe to re-run: all INSERTs have WHERE NOT EXISTS guards.
+
+-- 8a. Create an organization for each profile that doesn't have one yet
+INSERT INTO public.organizations (id, nome, slug, plano, propostas_mes_count, propostas_mes_reset_at, created_at)
+SELECT
+  gen_random_uuid(),
+  COALESCE(NULLIF(empresa, ''), NULLIF(nome, ''), email, 'Minha Organizacao'),
+  'org-' || SUBSTRING(id::text, 1, 8),
+  plano,
+  propostas_mes_count,
+  propostas_mes_reset_at,
+  created_at
+FROM public.profiles
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.organization_members om
+  JOIN public.profiles p2 ON p2.id = om.user_id
+  WHERE p2.id = profiles.id
+);
+
+-- 8b. Associate each user as "owner" of their org
+INSERT INTO public.organization_members (organization_id, user_id, role, joined_at)
+SELECT
+  o.id,
+  p.id,
+  'owner',
+  p.created_at
+FROM public.profiles p
+JOIN public.organizations o ON o.slug = 'org-' || SUBSTRING(p.id::text, 1, 8)
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.organization_members om WHERE om.user_id = p.id
+);
+
+-- 8c. Fill organization_id in profiles
+UPDATE public.profiles p
+SET organization_id = om.organization_id
+FROM public.organization_members om
+WHERE om.user_id = p.id
+  AND p.organization_id IS NULL;
+
+-- 8d. Fill organization_id in clients
+UPDATE public.clients c
+SET organization_id = om.organization_id
+FROM public.organization_members om
+WHERE c.owner_id = om.user_id
+  AND c.organization_id IS NULL;
+
+-- 8e. Fill organization_id in catalog_items
+UPDATE public.catalog_items ci
+SET organization_id = om.organization_id
+FROM public.organization_members om
+WHERE ci.owner_id = om.user_id
+  AND ci.organization_id IS NULL;
+
+-- 8f. Fill organization_id + created_by in proposals
+UPDATE public.proposals pr
+SET organization_id = om.organization_id,
+    created_by = pr.owner_id
+FROM public.organization_members om
+WHERE pr.owner_id = om.user_id
+  AND pr.organization_id IS NULL;
+
+-- 8g. Fill organization_id + created_by in invoices
+UPDATE public.invoices inv
+SET organization_id = om.organization_id,
+    created_by = inv.owner_id
+FROM public.organization_members om
+WHERE inv.owner_id = om.user_id
+  AND inv.organization_id IS NULL;
+
+-- 8h. Fill organization_id in proposta_ai
+UPDATE public.proposta_ai pa
+SET organization_id = om.organization_id
+FROM public.organization_members om
+WHERE pa.user_id = om.user_id
+  AND pa.organization_id IS NULL;
+
+
+-- ============================================================
+-- SECTION 9: MULTI-USER RLS (replaces base RLS for key tables)
+-- ============================================================
+-- These policies add org-level access alongside the original
+-- owner-based access. Old policies are dropped first.
+
+-- 9a. Enable RLS on new multi-user tables
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organization_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organization_invitations ENABLE ROW LEVEL SECURITY;
+
+-- 9b. organizations policies
+DO $$ BEGIN
+  CREATE POLICY "org_select_member" ON public.organizations FOR SELECT TO authenticated
+    USING (
+      id = user_org_id(auth.uid())
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "org_update_owner_admin" ON public.organizations FOR UPDATE TO authenticated
+    USING (
+      id = user_org_id(auth.uid()) AND user_org_role(auth.uid()) IN ('owner', 'admin')
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9c. organization_members policies
+DO $$ BEGIN
+  CREATE POLICY "om_select_member" ON public.organization_members FOR SELECT TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "om_manage_owner_admin" ON public.organization_members FOR ALL TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid()) AND user_org_role(auth.uid()) IN ('owner', 'admin')
+      OR public.has_role(auth.uid(), 'admin')
+    )
+    WITH CHECK (
+      organization_id = user_org_id(auth.uid()) AND user_org_role(auth.uid()) IN ('owner', 'admin')
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9d. organization_invitations policies
+DO $$ BEGIN
+  CREATE POLICY "oi_select_own" ON public.organization_invitations FOR SELECT TO authenticated
+    USING (
+      (organization_id = user_org_id(auth.uid()) AND user_org_role(auth.uid()) IN ('owner', 'admin'))
+      OR email = (SELECT email FROM public.profiles WHERE id = auth.uid())
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "oi_manage_owner_admin" ON public.organization_invitations FOR ALL TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid()) AND user_org_role(auth.uid()) IN ('owner', 'admin')
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9e. REPLACE: profiles select policy (add org member visibility)
+DROP POLICY IF EXISTS "profiles_select_own_or_admin" ON public.profiles;
+DO $$ BEGIN
+  CREATE POLICY "profiles_select_org" ON public.profiles FOR SELECT TO authenticated
+    USING (
+      id = auth.uid()
+      OR organization_id = user_org_id(auth.uid())
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9f. REPLACE: clients policy (org members OR owner fallback OR platform admin)
+DROP POLICY IF EXISTS "clients_owner_all" ON public.clients;
+DO $$ BEGIN
+  CREATE POLICY "clients_org_or_owner" ON public.clients FOR ALL TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR owner_id = auth.uid()
+      OR public.has_role(auth.uid(), 'admin')
+    )
+    WITH CHECK (
+      organization_id = COALESCE(user_org_id(auth.uid()), organization_id)
+      OR owner_id = auth.uid()
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9g. REPLACE: catalog_items policy (org members OR owner fallback)
+DROP POLICY IF EXISTS "catalog_owner_all" ON public.catalog_items;
+DO $$ BEGIN
+  CREATE POLICY "catalog_org_or_owner" ON public.catalog_items FOR ALL TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR owner_id = auth.uid()
+      OR public.has_role(auth.uid(), 'admin')
+    )
+    WITH CHECK (
+      organization_id = COALESCE(user_org_id(auth.uid()), organization_id)
+      OR owner_id = auth.uid()
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9h. REPLACE: proposals policies (split by operation for fine-grained control)
+DROP POLICY IF EXISTS "proposals_owner_all" ON public.proposals;
+DO $$ BEGIN
+  CREATE POLICY "proposals_select" ON public.proposals FOR SELECT TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR owner_id = auth.uid()
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "proposals_insert" ON public.proposals FOR INSERT TO authenticated
+    WITH CHECK (
+      (organization_id = user_org_id(auth.uid()) AND has_org_role_min(auth.uid(), 'member'))
+      OR (owner_id = auth.uid() AND user_org_id(auth.uid()) IS NULL)
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "proposals_update" ON public.proposals FOR UPDATE TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR owner_id = auth.uid()
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "proposals_delete" ON public.proposals FOR DELETE TO authenticated
+    USING (
+      (organization_id = user_org_id(auth.uid()) AND has_org_role_min(auth.uid(), 'admin'))
+      OR (owner_id = auth.uid() AND user_org_id(auth.uid()) IS NULL)
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9i. REPLACE: proposal_items policies (via parent proposal, org-aware)
+DROP POLICY IF EXISTS "proposal_items_select" ON public.proposal_items;
+DROP POLICY IF EXISTS "proposal_items_modify" ON public.proposal_items;
+DO $$ BEGIN
+  CREATE POLICY "pi_select" ON public.proposal_items FOR SELECT TO authenticated
+    USING (EXISTS (
+      SELECT 1 FROM public.proposals p
+      WHERE p.id = proposal_id
+      AND (p.organization_id = user_org_id(auth.uid()) OR p.owner_id = auth.uid() OR public.has_role(auth.uid(), 'admin'))
+    ));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "pi_modify" ON public.proposal_items FOR ALL TO authenticated
+    USING (EXISTS (
+      SELECT 1 FROM public.proposals p
+      WHERE p.id = proposal_id
+      AND (p.organization_id = user_org_id(auth.uid()) OR p.owner_id = auth.uid())
+    ))
+    WITH CHECK (EXISTS (
+      SELECT 1 FROM public.proposals p
+      WHERE p.id = proposal_id
+      AND (p.organization_id = user_org_id(auth.uid()) OR p.owner_id = auth.uid())
+    ));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9j. REPLACE: invoices policies (split by operation for fine-grained control)
+DROP POLICY IF EXISTS "invoices_owner_all" ON public.invoices;
+DO $$ BEGIN
+  CREATE POLICY "invoices_select" ON public.invoices FOR SELECT TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR owner_id = auth.uid()
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "invoices_insert" ON public.invoices FOR INSERT TO authenticated
+    WITH CHECK (
+      (organization_id = user_org_id(auth.uid()) AND has_org_role_min(auth.uid(), 'member'))
+      OR (owner_id = auth.uid() AND user_org_id(auth.uid()) IS NULL)
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "invoices_update" ON public.invoices FOR UPDATE TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR owner_id = auth.uid()
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "invoices_delete" ON public.invoices FOR DELETE TO authenticated
+    USING (
+      (organization_id = user_org_id(auth.uid()) AND has_org_role_min(auth.uid(), 'admin'))
+      OR (owner_id = auth.uid() AND user_org_id(auth.uid()) IS NULL)
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 9k. REPLACE: proposta_ai policies (org members OR owner fallback)
+DROP POLICY IF EXISTS "Users manage own proposta_ai" ON public.proposta_ai;
+DROP POLICY IF EXISTS "Admin reads all proposta_ai" ON public.proposta_ai;
+DO $$ BEGIN
+  CREATE POLICY "pai_select" ON public.proposta_ai FOR SELECT TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR user_id = auth.uid()
+      OR public.has_role(auth.uid(), 'admin')
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "pai_modify" ON public.proposta_ai FOR ALL TO authenticated
+    USING (
+      organization_id = user_org_id(auth.uid())
+      OR user_id = auth.uid()
+    )
+    WITH CHECK (
+      organization_id = COALESCE(user_org_id(auth.uid()), organization_id)
+      OR user_id = auth.uid()
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+
+-- ============================================================
+-- SECTION 10: UPDATED TRIGGERS (org-aware replacements)
+-- ============================================================
+-- These CREATE OR REPLACE functions override the base versions
+-- from SECTION 2. The existing triggers (SECTION 5) automatically
+-- use the latest function body.
+
+-- 10a. REPLACE: enforce_proposal_limit (org-aware)
+--     Mirrors 20260708010000: usa NEW.organization_id directamente
+--     em vez de user_org_id(NEW.owner_id) — que devolvia uma org
+--     arbitrária para utilizadores multi-org (BUG 1 original).
+--     Se tem org → conta por org. Sem org → fallback por utilizador.
+CREATE OR REPLACE FUNCTION public.enforce_proposal_limit()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_org_id UUID;
+  v_plano public.plan_tier;
+  v_count INT;
+  v_reset TIMESTAMPTZ;
+  v_limit INT;
+BEGIN
+  v_org_id := NEW.organization_id;
+
+  IF v_org_id IS NOT NULL THEN
+    -- Count per organization
+    SELECT plano, propostas_mes_count, propostas_mes_reset_at
+      INTO v_plano, v_count, v_reset
+    FROM public.organizations WHERE id = v_org_id FOR UPDATE;
+
+    IF v_plano IS NULL THEN
+      RAISE EXCEPTION 'Organization not found for proposal';
+    END IF;
+
+    IF now() >= v_reset THEN
+      v_count := 0;
+      v_reset := date_trunc('month', now()) + INTERVAL '1 month';
+    END IF;
+
+    SELECT propostas_mes INTO v_limit FROM public.plan_limits WHERE plano = v_plano;
+
+    IF v_count >= v_limit THEN
+      RAISE EXCEPTION 'PLAN_LIMIT_REACHED: limite de % propostas/mes atingido no plano %', v_limit, v_plano;
+    END IF;
+
+    UPDATE public.organizations
+    SET propostas_mes_count = v_count + 1,
+        propostas_mes_reset_at = v_reset
+    WHERE id = v_org_id;
+
+    -- NÃO reescrever NEW.organization_id — usar o valor do frontend
+
+  ELSE
+    -- Fallback: count per user (no org)
+    SELECT plano, propostas_mes_count, propostas_mes_reset_at
+      INTO v_plano, v_count, v_reset
+    FROM public.profiles WHERE id = NEW.owner_id FOR UPDATE;
+
+    IF v_plano IS NULL THEN
+      RAISE EXCEPTION 'Profile not found for user %', NEW.owner_id;
+    END IF;
+
+    IF now() >= v_reset THEN
+      v_count := 0;
+      v_reset := date_trunc('month', now()) + INTERVAL '1 month';
+    END IF;
+
+    SELECT propostas_mes INTO v_limit FROM public.plan_limits WHERE plano = v_plano;
+
+    IF v_count >= v_limit THEN
+      RAISE EXCEPTION 'PLAN_LIMIT_REACHED: limite de % propostas/mes atingido no plano %', v_limit, v_plano;
+    END IF;
+
+    UPDATE public.profiles
+    SET propostas_mes_count = v_count + 1,
+        propostas_mes_reset_at = v_reset
+    WHERE id = NEW.owner_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- 10b. REPLACE: handle_new_user (org-aware, auto-create org on signup)
+--     Admin email gets 'business' plan.
+--     Every new user gets a personal organization.
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_is_admin BOOLEAN;
+  v_org_id UUID;
+  v_org_nome TEXT;
+BEGIN
+  v_is_admin := lower(NEW.email) = 'graciochiziane@gmail.com';
+
+  INSERT INTO public.profiles (id, email, nome)
+  VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'nome', ''));
+
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (NEW.id, CASE WHEN v_is_admin THEN 'admin'::public.app_role ELSE 'user'::public.app_role END);
+
+  INSERT INTO public.subscriptions (user_id, plano, status, provider)
+  VALUES (NEW.id, CASE WHEN v_is_admin THEN 'business'::public.plan_tier ELSE 'free'::public.plan_tier END, 'active', 'manual');
+
+  -- Create a personal organization for the new user
+  v_org_nome := COALESCE(NEW.raw_user_meta_data->>'empresa', NEW.raw_user_meta_data->>'nome', split_part(NEW.email, '@', 1), 'Minha Organizacao');
+
+  INSERT INTO public.organizations (nome, slug, plano)
+  VALUES (v_org_nome, 'org-' || SUBSTRING(NEW.id::text, 1, 8), CASE WHEN v_is_admin THEN 'business'::public.plan_tier ELSE 'free'::public.plan_tier END)
+  RETURNING id INTO v_org_id;
+
+  -- Associate user as owner
+  INSERT INTO public.organization_members (organization_id, user_id, role)
+  VALUES (v_org_id, NEW.id, 'owner');
+
+  -- Link profile to org
+  UPDATE public.profiles SET organization_id = v_org_id WHERE id = NEW.id;
+
+  RETURN NEW;
+END;
+$$;
+
+-- 10c. Backfill: ensure admin user has correct role + business plan
+--     (in case this runs on an existing database where admin already exists)
+DO $$
+DECLARE
+  v_uid UUID;
+BEGIN
+  SELECT id INTO v_uid FROM auth.users WHERE lower(email) = 'graciochiziane@gmail.com' LIMIT 1;
+  IF v_uid IS NOT NULL THEN
+    INSERT INTO public.user_roles (user_id, role)
+    VALUES (v_uid, 'admin'::public.app_role)
+    ON CONFLICT DO NOTHING;
+
+    UPDATE public.profiles SET plano = 'business'::public.plan_tier WHERE id = v_uid;
+    UPDATE public.subscriptions SET plano = 'business'::public.plan_tier WHERE user_id = v_uid;
+  END IF;
+END $$;
+
+
+-- 10d. ADD: enforce_client_limit (mirrors 20260814130000)
+--      Trigger BEFORE INSERT on clients — valida limite de clientes
+--      do plano (plan_limits.clientes_max) no momento do INSERT.
+CREATE OR REPLACE FUNCTION public.enforce_client_limit()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_org_id UUID;
+  v_plano public.plan_tier;
+  v_clientes_max INTEGER;
+  v_current_count INTEGER;
+BEGIN
+  -- Determinar org_id (pode vir de organization_id ou owner_id legacy)
+  IF NEW.organization_id IS NOT NULL THEN
+    v_org_id := NEW.organization_id;
+  ELSE
+    -- Solo user: sem limite de clientes
+    RETURN NEW;
+  END IF;
+
+  -- Buscar plano da org e limite
+  SELECT o.plano INTO v_plano
+  FROM public.organizations o
+  WHERE o.id = v_org_id AND o.suspended_at IS NULL;
+
+  IF v_plano IS NULL THEN
+    RAISE EXCEPTION 'Organização não encontrada ou suspensa';
+  END IF;
+
+  -- Buscar limite de clientes
+  SELECT clientes_max INTO v_clientes_max
+  FROM public.plan_limits
+  WHERE plano = v_plano;
+
+  -- Se clientes_max é NULL (ilimitado), permitir
+  IF v_clientes_max IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- Contar clientes actuais da org
+  SELECT COUNT(*) INTO v_current_count
+  FROM public.clients
+  WHERE organization_id = v_org_id;
+
+  IF v_current_count >= v_clientes_max THEN
+    RAISE EXCEPTION 'Limite de clientes atingido (%) para o plano %',
+      v_clientes_max, v_plano;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_client_limit ON public.clients;
+CREATE TRIGGER trg_enforce_client_limit
+  BEFORE INSERT ON public.clients
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_client_limit();
+
+-- 10e. ADD: enforce_ia_generation_limit (mirrors 20260814130000)
+--      Trigger BEFORE INSERT on proposta_ai — valida limite de
+--      gerações IA mensais por org (plan_limits.geracoes_ia_mes).
+CREATE OR REPLACE FUNCTION public.enforce_ia_generation_limit()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+DECLARE
+  v_org_id UUID;
+  v_plano public.plan_tier;
+  v_ia_limit INTEGER;
+  v_current_count INTEGER;
+BEGIN
+  -- Determinar org_id
+  IF NEW.organization_id IS NOT NULL THEN
+    v_org_id := NEW.organization_id;
+  ELSE
+    -- Fallback: buscar via user_id (legacy single-tenant)
+    SELECT organization_id INTO v_org_id
+    FROM public.profiles WHERE id = NEW.user_id;
+    IF v_org_id IS NULL THEN
+      RETURN NEW; -- não consegue determinar org, permitir
+    END IF;
+  END IF;
+
+  -- Buscar plano da org
+  SELECT o.plano INTO v_plano
+  FROM public.organizations o
+  WHERE o.id = v_org_id AND o.suspended_at IS NULL;
+
+  IF v_plano IS NULL THEN
+    RAISE EXCEPTION 'Organização não encontrada ou suspensa';
+  END IF;
+
+  -- Buscar limite de IA
+  SELECT geracoes_ia_mes INTO v_ia_limit
+  FROM public.plan_limits
+  WHERE plano = v_plano;
+
+  -- Se ilimitado, permitir
+  IF v_ia_limit IS NULL OR v_ia_limit >= 2147483647 THEN
+    RETURN NEW;
+  END IF;
+
+  -- Contar gerações IA este mês para a org
+  SELECT COUNT(*) INTO v_current_count
+  FROM public.proposta_ai
+  WHERE organization_id = v_org_id
+    AND EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM now())
+    AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM now());
+
+  IF v_current_count >= v_ia_limit THEN
+    RAISE EXCEPTION 'Limite de gerações IA mensais atingido (%) para o plano %',
+      v_ia_limit, v_plano;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_ia_generation_limit ON public.proposta_ai;
+CREATE TRIGGER trg_enforce_ia_generation_limit
+  BEFORE INSERT ON public.proposta_ai
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_ia_generation_limit();
+
+
+-- ============================================================
+-- SECTION 11: CRM BUSINESS MODULE
+-- (20260814100000 + RLS endurecida final 20260903000000 +
+--  helpers org-scoped 20260707010000 de que as policies dependem)
+--
+-- CRM comercial exclusivo do plano Business:
+--   - estende clients com campos comerciais (nullable/default —
+--     não quebra Free/Pro)
+--   - 4 novas tabelas: actividades, follow-ups, tags, N:N tags
+--   - RLS fail-closed: membro da org E org com feature crm_access
+--     activa (plan_features) — sem linha => NEGADO
+--   - platform admin mantém acesso (suporte/ops)
+--
+-- Nota: o seed crm_access já está na SECTION 3d-2 (plan_features).
+-- ============================================================
+
+-- 11a. Helpers org-scoped (20260707010000 §1-2) — exigidos pelas
+--      policies CRM; as policies de dados pré-existentes deste
+--      script continuam a usar user_org_id/user_org_role (KNOWN GAP).
+CREATE OR REPLACE FUNCTION public.user_belongs_to_org(p_org_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.organization_members
+    WHERE organization_id = p_org_id
+      AND user_id = auth.uid()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.user_role_in_org(p_org_id UUID)
+RETURNS public.org_role
+LANGUAGE SQL
+STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT role FROM public.organization_members
+  WHERE organization_id = p_org_id
+    AND user_id = auth.uid()
+  LIMIT 1;
+$$;
+
+-- 11b. Enums CRM
+DO $$ BEGIN
+    CREATE TYPE public.crm_estado AS ENUM (
+        'novo', 'contactado', 'qualificado', 'proposta_enviada',
+        'em_negociacao', 'ganho', 'perdido', 'inactivo'
+    );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE public.crm_origem AS ENUM (
+        'whatsapp', 'facebook', 'instagram', 'website',
+        'referencia', 'cliente_existente', 'outro'
+    );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE public.crm_activity_type AS ENUM (
+        'contacto', 'chamada', 'whatsapp', 'email', 'reuniao',
+        'nota', 'proposta_enviada', 'follow_up', 'outro'
+    );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- 11c. clients: colunas comerciais (todas nullable/default)
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS cargo TEXT DEFAULT '';
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT '';
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS origem public.crm_origem;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'contacto';
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS estado_comercial public.crm_estado DEFAULT 'novo';
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS valor_potencial NUMERIC(14,2) DEFAULT 0;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS ultimo_contacto TIMESTAMPTZ;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS proximo_contacto TIMESTAMPTZ;
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS responsavel_id UUID REFERENCES auth.users(id);
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS notas TEXT DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS clients_estado_comercial_idx
+    ON public.clients(estado_comercial) WHERE organization_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS clients_proximo_contacto_idx
+    ON public.clients(proximo_contacto) WHERE proximo_contacto IS NOT NULL;
+CREATE INDEX IF NOT EXISTS clients_origem_idx
+    ON public.clients(origem) WHERE origem IS NOT NULL;
+
+-- 11d. crm_activities — timeline de actividades por contacto
+CREATE TABLE IF NOT EXISTS public.crm_activities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+    proposal_id UUID REFERENCES public.proposals(id) ON DELETE SET NULL,
+    type public.crm_activity_type NOT NULL DEFAULT 'nota',
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT DEFAULT '',
+    performed_by UUID NOT NULL REFERENCES auth.users(id),
+    performed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS crm_activities_org_idx ON public.crm_activities(organization_id);
+CREATE INDEX IF NOT EXISTS crm_activities_client_idx ON public.crm_activities(client_id);
+CREATE INDEX IF NOT EXISTS crm_activities_performed_at_idx ON public.crm_activities(performed_at DESC);
+
+DROP TRIGGER IF EXISTS trg_crm_activities_updated_at ON public.crm_activities;
+CREATE TRIGGER trg_crm_activities_updated_at
+    BEFORE UPDATE ON public.crm_activities
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- 11e. crm_follow_ups — próximas acções agendadas
+CREATE TABLE IF NOT EXISTS public.crm_follow_ups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+    proposal_id UUID REFERENCES public.proposals(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    due_at TIMESTAMPTZ NOT NULL,
+    completed_at TIMESTAMPTZ,
+    completed_by UUID REFERENCES auth.users(id),
+    created_by UUID NOT NULL REFERENCES auth.users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS crm_follow_ups_org_idx ON public.crm_follow_ups(organization_id);
+CREATE INDEX IF NOT EXISTS crm_follow_ups_client_idx ON public.crm_follow_ups(client_id);
+CREATE INDEX IF NOT EXISTS crm_follow_ups_due_at_idx ON public.crm_follow_ups(due_at) WHERE completed_at IS NULL;
+CREATE INDEX IF NOT EXISTS crm_follow_ups_completed_idx ON public.crm_follow_ups(completed_at);
+
+DROP TRIGGER IF EXISTS trg_crm_follow_ups_updated_at ON public.crm_follow_ups;
+CREATE TRIGGER trg_crm_follow_ups_updated_at
+    BEFORE UPDATE ON public.crm_follow_ups
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- 11f. crm_tags — tags por organização
+CREATE TABLE IF NOT EXISTS public.crm_tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#6366f1',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (organization_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS crm_tags_org_idx ON public.crm_tags(organization_id);
+
+-- 11g. crm_contact_tags — relação N:N clients <-> crm_tags
+CREATE TABLE IF NOT EXISTS public.crm_contact_tags (
+    client_id UUID NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+    tag_id UUID NOT NULL REFERENCES public.crm_tags(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (client_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS crm_contact_tags_client_idx ON public.crm_contact_tags(client_id);
+CREATE INDEX IF NOT EXISTS crm_contact_tags_tag_idx ON public.crm_contact_tags(tag_id);
+
+-- 11h. org_has_crm_access — gate fail-closed (20260903000000)
+DROP FUNCTION IF EXISTS public.org_has_crm_access(UUID);
+
+CREATE OR REPLACE FUNCTION public.org_has_crm_access(p_org_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = 'public'
+AS $function$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.organizations o
+        WHERE o.id = p_org_id
+          AND public.has_plan_feature(o.plano, 'crm_access')
+    )
+$function$;
+
+COMMENT ON FUNCTION public.org_has_crm_access(UUID) IS
+'Verifica se a organização tem a feature crm_access activa (plano Business). Usada pelas policies RLS do CRM. Fail-closed: org desconhecida ou sem feature => false.';
+
+-- 11i. RLS endurecida (versão FINAL de produção — 20260903000000):
+--      user_belongs_to_org AND org_has_crm_access (+ OR admin em
+--      select/delete). A versão intermédia de 20260814100000 §7
+--      (sem o gate) é deliberadamente NÃO usada.
+ALTER TABLE public.crm_activities ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "crm_activities_select" ON public.crm_activities;
+CREATE POLICY "crm_activities_select" ON public.crm_activities
+    FOR SELECT TO authenticated
+    USING (
+        (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+        OR public.has_role(auth.uid(), 'admin'::public.app_role)
+    );
+
+DROP POLICY IF EXISTS "crm_activities_insert" ON public.crm_activities;
+CREATE POLICY "crm_activities_insert" ON public.crm_activities
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        public.user_belongs_to_org(organization_id)
+        AND public.org_has_crm_access(organization_id)
+        AND performed_by = auth.uid()
+    );
+
+DROP POLICY IF EXISTS "crm_activities_update" ON public.crm_activities;
+CREATE POLICY "crm_activities_update" ON public.crm_activities
+    FOR UPDATE TO authenticated
+    USING (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+    WITH CHECK (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id));
+
+DROP POLICY IF EXISTS "crm_activities_delete" ON public.crm_activities;
+CREATE POLICY "crm_activities_delete" ON public.crm_activities
+    FOR DELETE TO authenticated
+    USING (
+        (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+        OR public.has_role(auth.uid(), 'admin'::public.app_role)
+    );
+
+ALTER TABLE public.crm_follow_ups ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "crm_follow_ups_select" ON public.crm_follow_ups;
+CREATE POLICY "crm_follow_ups_select" ON public.crm_follow_ups
+    FOR SELECT TO authenticated
+    USING (
+        (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+        OR public.has_role(auth.uid(), 'admin'::public.app_role)
+    );
+
+DROP POLICY IF EXISTS "crm_follow_ups_insert" ON public.crm_follow_ups;
+CREATE POLICY "crm_follow_ups_insert" ON public.crm_follow_ups
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        public.user_belongs_to_org(organization_id)
+        AND public.org_has_crm_access(organization_id)
+        AND created_by = auth.uid()
+    );
+
+DROP POLICY IF EXISTS "crm_follow_ups_update" ON public.crm_follow_ups;
+CREATE POLICY "crm_follow_ups_update" ON public.crm_follow_ups
+    FOR UPDATE TO authenticated
+    USING (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+    WITH CHECK (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id));
+
+DROP POLICY IF EXISTS "crm_follow_ups_delete" ON public.crm_follow_ups;
+CREATE POLICY "crm_follow_ups_delete" ON public.crm_follow_ups
+    FOR DELETE TO authenticated
+    USING (
+        (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+        OR public.has_role(auth.uid(), 'admin'::public.app_role)
+    );
+
+ALTER TABLE public.crm_tags ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "crm_tags_select" ON public.crm_tags;
+CREATE POLICY "crm_tags_select" ON public.crm_tags
+    FOR SELECT TO authenticated
+    USING (
+        (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+        OR public.has_role(auth.uid(), 'admin'::public.app_role)
+    );
+
+DROP POLICY IF EXISTS "crm_tags_insert" ON public.crm_tags;
+CREATE POLICY "crm_tags_insert" ON public.crm_tags
+    FOR INSERT TO authenticated
+    WITH CHECK (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id));
+
+DROP POLICY IF EXISTS "crm_tags_update" ON public.crm_tags;
+CREATE POLICY "crm_tags_update" ON public.crm_tags
+    FOR UPDATE TO authenticated
+    USING (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+    WITH CHECK (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id));
+
+DROP POLICY IF EXISTS "crm_tags_delete" ON public.crm_tags;
+CREATE POLICY "crm_tags_delete" ON public.crm_tags
+    FOR DELETE TO authenticated
+    USING (
+        (public.user_belongs_to_org(organization_id) AND public.org_has_crm_access(organization_id))
+        OR public.has_role(auth.uid(), 'admin'::public.app_role)
+    );
+
+ALTER TABLE public.crm_contact_tags ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "crm_contact_tags_select" ON public.crm_contact_tags;
+CREATE POLICY "crm_contact_tags_select" ON public.crm_contact_tags
+    FOR SELECT TO authenticated
+    USING (
+        EXISTS (SELECT 1 FROM public.clients c WHERE c.id = client_id
+                AND ((public.user_belongs_to_org(c.organization_id) AND public.org_has_crm_access(c.organization_id))
+                     OR public.has_role(auth.uid(), 'admin'::public.app_role)))
+    );
+
+DROP POLICY IF EXISTS "crm_contact_tags_insert" ON public.crm_contact_tags;
+CREATE POLICY "crm_contact_tags_insert" ON public.crm_contact_tags
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        EXISTS (SELECT 1 FROM public.clients c WHERE c.id = client_id
+                AND public.user_belongs_to_org(c.organization_id)
+                AND public.org_has_crm_access(c.organization_id))
+    );
+
+DROP POLICY IF EXISTS "crm_contact_tags_delete" ON public.crm_contact_tags;
+CREATE POLICY "crm_contact_tags_delete" ON public.crm_contact_tags
+    FOR DELETE TO authenticated
+    USING (
+        EXISTS (SELECT 1 FROM public.clients c WHERE c.id = client_id
+                AND ((public.user_belongs_to_org(c.organization_id) AND public.org_has_crm_access(c.organization_id))
+                     OR public.has_role(auth.uid(), 'admin'::public.app_role)))
+    );
+
+-- 11j. Comments
+COMMENT ON TABLE public.crm_activities IS 'CRM: timeline de actividades por contacto (chamadas, emails, propostas, follow-ups)';
+COMMENT ON TABLE public.crm_follow_ups IS 'CRM: próximas acções agendadas por contacto';
+COMMENT ON TABLE public.crm_tags IS 'CRM: tags por organização para classificar contactos';
+COMMENT ON TABLE public.crm_contact_tags IS 'CRM: relação N:N entre clients e tags';
+
+
+-- ============================================================
+-- SECTION 12: ADMIN TENANT FIELDS + RPCs (Super Admin panel)
+-- (20260725000000 §1/§3-7 + 20260725120000 §1/§3 + 20260725140000)
+--
+-- Já presente no resto do script (não duplicado aqui):
+--   - organizations.suspended_at (SECTION 6a)
+--   - admin_audit_log + policies (SECTION 3/4n)
+--   - plan_limits.geracoes_ia_mes + plan_limits_admin_update (4k)
+--   - user_activity + profiles.last_seen_at (SECTION 3)
+-- ============================================================
+
+-- 12a. organizations: colunas do painel admin e do perfil da empresa
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS contact_email TEXT DEFAULT '';
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS nuit TEXT DEFAULT '';
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS suspension_reason TEXT;
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS last_proposal_created_at TIMESTAMPTZ;
+
+-- 12b. Índices do painel admin
+CREATE INDEX IF NOT EXISTS idx_orgs_suspended ON public.organizations(suspended_at) WHERE suspended_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orgs_last_proposal ON public.organizations(last_proposal_created_at DESC);
+
+-- 12c. Trigger: last_proposal_created_at ao criar proposta
+CREATE OR REPLACE FUNCTION public.update_org_last_proposal()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.organizations
+    SET last_proposal_created_at = NEW.created_at
+  WHERE id = NEW.organization_id;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_update_org_last_proposal ON public.proposals;
+CREATE TRIGGER trg_update_org_last_proposal
+  AFTER INSERT ON public.proposals
+  FOR EACH ROW EXECUTE FUNCTION public.update_org_last_proposal();
+
+-- 12d. RPC: suspender/reactivar tenant
+CREATE OR REPLACE FUNCTION public.admin_toggle_suspend(
+  p_org_id UUID,
+  p_suspend BOOLEAN,
+  p_reason TEXT DEFAULT ''
+)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  IF NOT public.has_role(auth.uid(), 'admin') THEN
+    RAISE EXCEPTION 'Acesso negado: apenas admins';
+  END IF;
+
+  IF p_suspend THEN
+    UPDATE public.organizations
+      SET suspended_at = now(), suspension_reason = p_reason
+    WHERE id = p_org_id;
+  ELSE
+    UPDATE public.organizations
+      SET suspended_at = NULL, suspension_reason = NULL
+    WHERE id = p_org_id;
+  END IF;
+END;
+$$;
+
+-- 12e. RPC: health score do tenant (actividade recente)
+CREATE OR REPLACE FUNCTION public.organization_health_score(p_org_id UUID)
+RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_last TIMESTAMPTZ;
+  v_days int;
+BEGIN
+  SELECT last_proposal_created_at INTO v_last
+  FROM public.organizations WHERE id = p_org_id;
+
+  IF v_last IS NULL THEN RETURN 0; END IF;
+
+  v_days := extract(day from now() - v_last)::int;
+  IF v_days <= 1 THEN RETURN 100; END IF;
+  IF v_days <= 3 THEN RETURN 80; END IF;
+  IF v_days <= 7 THEN RETURN 60; END IF;
+  IF v_days <= 14 THEN RETURN 40; END IF;
+  IF v_days <= 30 THEN RETURN 20; END IF;
+  RETURN 0;
+END;
+$$;
+
+-- 12f. RPC: remover membro (captura user_id antes do DELETE)
+CREATE OR REPLACE FUNCTION public.admin_remove_member(
+  p_member_id UUID,
+  p_org_id UUID
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role public.org_role;
+  v_owner_count INT;
+  v_user_id UUID;
+BEGIN
+  -- Verificar admin
+  IF NOT public.has_role(auth.uid(), 'admin') THEN
+    RAISE EXCEPTION 'Acesso negado: apenas admins';
+  END IF;
+
+  -- Buscar role e user_id ANTES de apagar
+  SELECT role, user_id INTO v_role, v_user_id
+  FROM public.organization_members
+  WHERE id = p_member_id AND organization_id = p_org_id;
+
+  IF v_role IS NULL THEN
+    RAISE EXCEPTION 'Membro nao encontrado nesta organizacao';
+  END IF;
+
+  -- Impedir remocao do ultimo owner
+  SELECT COUNT(*) INTO v_owner_count
+  FROM public.organization_members
+  WHERE organization_id = p_org_id AND role = 'owner';
+
+  IF v_role = 'owner' AND v_owner_count <= 1 THEN
+    RAISE EXCEPTION 'Nao e possivel remover o unico owner da organizacao';
+  END IF;
+
+  -- Apagar membro
+  DELETE FROM public.organization_members
+  WHERE id = p_member_id AND organization_id = p_org_id;
+
+  -- Limpar organization_id no profile (usando v_user_id capturado)
+  UPDATE public.profiles
+    SET organization_id = NULL
+  WHERE organization_id = p_org_id
+    AND id = v_user_id;
+
+END;
+$$;
+
+-- 12g. RPC: métricas da plataforma (1 query em vez de 9 paralelas)
+CREATE OR REPLACE FUNCTION public.admin_platform_metrics()
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_total_users INT;
+  v_new_signups INT;
+  v_proposals_month INT;
+  v_clients_month INT;
+  v_proposals_total_value NUMERIC;
+  v_online_now INT;
+  v_accessed_today INT;
+  v_accessed_week INT;
+  v_accessed_month INT;
+  v_result JSON;
+BEGIN
+  -- Total users
+  SELECT COUNT(*) INTO v_total_users FROM public.profiles;
+
+  -- Novos registos este mes
+  SELECT COUNT(*) INTO v_new_signups
+  FROM public.profiles
+  WHERE created_at >= date_trunc('month', now());
+
+  -- Propostas este mes
+  SELECT COUNT(*) INTO v_proposals_month
+  FROM public.proposals
+  WHERE created_at >= date_trunc('month', now());
+
+  -- Clientes este mes
+  SELECT COUNT(*) INTO v_clients_month
+  FROM public.clients
+  WHERE created_at >= date_trunc('month', now());
+
+  -- Valor total de propostas (aggregate no DB, nao carrega todas as rows)
+  SELECT COALESCE(SUM(total), 0) INTO v_proposals_total_value FROM public.proposals;
+
+  -- Online agora (ultimos 15 min)
+  SELECT COUNT(*) INTO v_online_now
+  FROM public.profiles
+  WHERE last_seen_at > now() - INTERVAL '15 minutes';
+
+  -- Acessaram hoje
+  SELECT COUNT(DISTINCT user_id) INTO v_accessed_today
+  FROM public.user_activity
+  WHERE created_at >= date_trunc('day', now());
+
+  -- Acessaram na semana
+  SELECT COUNT(DISTINCT user_id) INTO v_accessed_week
+  FROM public.user_activity
+  WHERE created_at >= now() - INTERVAL '7 days';
+
+  -- Acessaram no mes
+  SELECT COUNT(DISTINCT user_id) INTO v_accessed_month
+  FROM public.user_activity
+  WHERE created_at >= now() - INTERVAL '30 days';
+
+  v_result := json_build_object(
+    'users_online_now', v_online_now,
+    'accessed_today', v_accessed_today,
+    'accessed_week', v_accessed_week,
+    'accessed_month', v_accessed_month,
+    'total_users', v_total_users,
+    'new_signups_this_month', v_new_signups,
+    'proposals_this_month', v_proposals_month,
+    'clients_this_month', v_clients_month,
+    'proposals_total_value', v_proposals_total_value
+  );
+
+  RETURN v_result;
+END;
+$$;
+
+-- 12h. RLS: acesso total do platform admin (paridade com produção;
+--      as policies pré-existentes 9b/9c já cobrem o admin via has_role,
+--      estas são a belt-and-suspenders de 20260725000000 §6-7)
+DROP POLICY IF EXISTS "admin_see_all_orgs" ON public.organizations;
+CREATE POLICY "admin_see_all_orgs" ON public.organizations
+  FOR SELECT TO authenticated
+  USING (public.has_role(auth.uid(), 'admin'));
+
+DROP POLICY IF EXISTS "admin_update_orgs" ON public.organizations;
+CREATE POLICY "admin_update_orgs" ON public.organizations
+  FOR UPDATE TO authenticated
+  USING (public.has_role(auth.uid(), 'admin'));
+
+DROP POLICY IF EXISTS "admin_see_all_members" ON public.organization_members;
+CREATE POLICY "admin_see_all_members" ON public.organization_members
+  FOR SELECT TO authenticated
+  USING (public.has_role(auth.uid(), 'admin'));
+
+
+-- ============================================================
+-- END OF CONSOLIDATED STAGING SQL
+-- ============================================================

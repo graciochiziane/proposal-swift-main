@@ -1,20 +1,32 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FileText, Users, LayoutDashboard, Menu, X, Settings, Package } from 'lucide-react';
+import { FileText, Users, LayoutDashboard, Menu, X, Package, Building2, Sparkles, TrendingUp } from 'lucide-react';
 import UserProfile from '@/components/UserProfile';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
+import { usePlanFeatures } from '@/hooks/usePlanFeatures';
+import InvitationBanner from '@/components/org/InvitationBanner';
 
+// Ordem lógica: Dashboard → Propostas → Propostas Avançadas → Clientes → Vendas/CRM → Catálogo → Organização
+// (dados da empresa e pagamentos vivem na Organização; dados pessoais em /perfil via avatar)
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Propostas', path: '/propostas', icon: FileText },
+  { label: 'Propostas Avançadas', path: '/propostas-avancadas', icon: Sparkles },
   { label: 'Clientes', path: '/clientes', icon: Users },
+  { label: 'Vendas', path: '/crm', icon: TrendingUp, requiresFeature: 'crm_access' as const },
   { label: 'Catálogo', path: '/catalogo', icon: Package },
-  { label: 'Configurações', path: '/configuracoes', icon: Settings },
+  { label: 'Organização', path: '/organizacao', icon: Building2 },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { hasFeature } = usePlanFeatures();
+
+  // Filtrar items que requerem feature (ex: Vendas requer crm_access)
+  const visibleNavItems = navItems.filter(item =>
+    !('requiresFeature' in item) || hasFeature(item.requiresFeature as string)
+  );
 
   // Regista actividade do utilizador em cada página
   useActivityTracker();
@@ -35,8 +47,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-1">
-            {navItems.map(item => {
-              const active = location.pathname === item.path;
+            {visibleNavItems.map(item => {
+              const active = item.path === '/crm'
+                ? location.pathname.startsWith('/crm')
+                : location.pathname === item.path;
               return (
                 <Link
                   key={item.path}
@@ -73,8 +87,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Mobile nav */}
         {mobileOpen && (
           <nav className="md:hidden border-t border-border p-3 space-y-1 animate-fade-in">
-            {navItems.map(item => {
-              const active = location.pathname === item.path;
+            {visibleNavItems.map(item => {
+              const active = item.path === '/crm'
+                ? location.pathname.startsWith('/crm')
+                : location.pathname === item.path;
               return (
                 <Link
                   key={item.path}
@@ -99,6 +115,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="container py-6 md:py-8">
+        <InvitationBanner />
         {children}
       </main>
     </div>

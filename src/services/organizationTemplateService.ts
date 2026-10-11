@@ -1,0 +1,303 @@
+// ============================================================
+// OrganizationTemplateService — associação organização→modelo PDF
+//
+// Implementação Supabase do resolver (a consulta injectada no
+// resolver puro de src/lib/pdf/resolver.ts) + CRUD para o painel
+// de administração (aba Templates do TenantDetailPage).
+//
+// Distinção de origem (pedido do cliente): cada linha é
+// 'personalizado' (identidade própria do cliente) ou
+// 'adquirido' (modelo do catálogo). Metadado visual/comercial
+// — o resolver ignora a origem (cadeia de fallback intacta).
+//
+// Segurança: TODAS as queries passam pela RLS da tabela
+// organization_templates. Desde a migration
+// 20261009000000, a ESCRITA (atribuir/default/ligar/apagar)
+// é exclusiva do platform admin (superadmin) — membros de org
+// só têm SELECT das próprias linhas (usado pelos seletores para
+// filtrar o catálogo visível). O organizationId recebido é,
+// no máximo, uma dica de UX; um pedido que tente ler templates
+// de outra org devolve 0 linhas.
+//
+// Regra de degradação: nenhuma função lança por falha de leitura;
+// o resolver devolve sempre um PdfTemplateId válido (fallback).
+// As funções de escrita LANÇAM (o admin precisa de ver o erro).
+// ============================================================
+
+import { supabase } from '@/integrations/supabase/client';
+import { resolverTemplateParaOrg } from '@/lib/pdf/resolver';
+import { TEMPLATES_PDF, obterTemplateInfo } from '@/lib/pdf/templates';
+import type { PdfTemplateId } from '@/lib/pdf/tipos';
+
+/**
+ * Origem do modelo no tenant (distinção pedida pelo cliente):
+ * 'personalizado' = identidade própria do cliente · 'adquirido' = catálogo.
+ */
+export type OrigemTemplate = 'adquirido' | 'personalizado';
+
+/** Linha de organization_templates (espelho do schema) */
+export interface OrganizationTemplate {
+  id: string;
+  organization_id: string;
+  template_key: string;
+  nome: string;
+  origem: OrigemTemplate;
+  is_active: boolean;
+  is_default: boolean;
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Atribuição com o nome da org (vista global do superadmin) */
+export type AtribuicaoTemplate = OrganizationTemplate & { organization_nome: string | null };
+
+const TABELA = 'organization_templates' as const;
+
+function paraTemplate(row: Record<string, unknown>): OrganizationTemplate {
+  return {
+    id: row.id as string,
+    organization_id: row.organization_id as string,
+    template_key: row.template_key as string,
+    nome: row.nome as string,
+    // coluna nova: linha antiga / migration ainda não aplicada → 'adquirido'
+    origem: row.origem === 'personalizado' ? 'personalizado' : 'adquirido',
+    is_active: row.is_active as boolean,
+    is_default: row.is_default as boolean,
+    config: (row.config ?? {}) as Record<string, unknown>,
+    created_at: row.created_at as string,
+    updated_at: row.updated_at as string,
+  };
+}
+
+export const OrganizationTemplateService = {
+  /**
+   * Consulta a chave do template default ACTIVO da org
+   * (a consulta injectada no resolver puro). RLS filtra linhas
+   * alheias → null. Nunca lança.
+   */
+  async consultarTemplateDefault(organizationId: string): Promise<string | null> {
+    try {
+      const { data, error } = await supabase
+        .from(TABELA)
+        .select('template_key')
+        .eq('organization_id', organizationId)
+        .eq('is_default', true)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      if (error) return null; // erro → "sem linha" → fallback
+      return (data?.template_key as string | undefined) ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Resolve o template efectivo da organização activa com a cadeia
+   * de fallback da proposta (org > fallback do caller). Nunca lança.
+   * Org sem linhas → devolve o fallback (comportamento actual).
+   */
+  async resolverTemplateParaOrganizacao(
+    organizationId: string | null | undefined,
+    fallback: PdfTemplateId,
+  ): Promise<PdfTemplateId> {
+    return resolverTemplateParaOrg(organizationId, fallback, (orgId) =>
+      OrganizationTemplateService.consultarTemplateDefault(orgId));
+  },
+
+  /**
+   * Chaves dos modelos ATRIBUÍDOS e ACTIVOS à org (para filtrar
+   * o catálogo visível nos seletores do tenant). RLS filtra
+   * linhas alheias → []. Nunca lança (erro → lista vazia).
+   */
+  async chavesAtribuidasAtivas(organizationId: string): Promise<string[]> {
+    try {
+      const { data, error } = await supabase
+        .from(TABELA)
+        .select('template_key')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true);
+      if (error) return [];
+      return (data ?? []).map(r => r.template_key as string);
+    } catch {
+      return [];
+    }
+  },
+
+  /** Lista as linhas da org (default primeiro). Lança em erro de leitura. */
+  async listar(organizationId: string): Promise<OrganizationTemplate[]> {
+    const { data, error } = await supabase
+      .from(TABELA)
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((r: Record<string, unknown>) => paraTemplate(r));
+  },
+
+  /**
+   * TODAS as atribuições da plataforma com o nome da org
+   * (vista global do superadmin). RLS: só platform admin vê
+   * linhas além das da própria org. Lança em erro de leitura.
+   */
+  async listarTodas(): Promise<AtribuicaoTemplate[]> {
+    const { data, error } = await supabase
+      .from(TABELA)
+      .select('*, organizations(nome)')
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      ...paraTemplate(r),
+      organization_nome: ((r.organizations as Record<string, unknown> | null)?.nome as string) ?? null,
+    }));
+  },
+
+  /**
+   * Atribuição em LOTE (superadmin): cria a linha do modelo para
+   * cada tenant escolhido, saltando os que já o têm (dedup
+   * client-side — não há índice único (org, template_key)).
+   * is_default=true limpa o default anterior de cada org alvo
+   * ANTES de inserir (ordem de segurança do índice único parcial).
+   * Devolve contadores para feedback honesto na UI.
+   */
+  async criarEmLote(input: {
+    organization_ids: string[];
+    template_key: PdfTemplateId;
+    nome?: string;
+    origem?: OrigemTemplate;
+    is_default?: boolean;
+  }): Promise<{ criadas: number; ignoradas: number }> {
+    // 1. dedup: orgs que já têm este modelo base
+    const { data: existentes, error: errEx } = await supabase
+      .from(TABELA)
+      .select('organization_id')
+      .eq('template_key', input.template_key)
+      .in('organization_id', input.organization_ids);
+    if (errEx) throw new Error(errEx.message);
+    const jaTem = new Set((existentes ?? []).map(r => r.organization_id as string));
+    const aCriar = input.organization_ids.filter(id => !jaTem.has(id));
+    if (aCriar.length === 0) {
+      return { criadas: 0, ignoradas: input.organization_ids.length };
+    }
+
+    // 2. limpar defaults anteriores das orgs alvo (se aplicável)
+    if (input.is_default) {
+      const { error: errLimpar } = await supabase
+        .from(TABELA)
+        .update({ is_default: false })
+        .in('organization_id', aCriar)
+        .eq('is_default', true);
+      if (errLimpar) throw new Error(errLimpar.message);
+    }
+
+    // 3. inserir as novas linhas
+    const nome = input.nome?.trim() || obterTemplateInfo(input.template_key).nome;
+    const rows = aCriar.map(orgId => ({
+      organization_id: orgId,
+      template_key: input.template_key,
+      nome,
+      origem: input.origem ?? 'adquirido',
+      is_active: true,
+      is_default: input.is_default ?? false,
+    }));
+    const { error } = await supabase.from(TABELA).insert(rows);
+    if (error) throw new Error(error.message);
+    return { criadas: aCriar.length, ignoradas: jaTem.size };
+  },
+
+  /**
+   * Define a linha indicada como default da org (limpa o default
+   * anterior e re-activa a linha). Ordem: limpar → promover.
+   * Se o passo de promover falhar, a org fica sem default →
+   * o resolver devolve o fallback (degradação segura, nunca erro
+   * de exportação).
+   */
+  async definirComoDefault(templateId: string): Promise<void> {
+    // 1. limpar o default actual (idempotente)
+    const { data: linha, error: errLeitura } = await supabase
+      .from(TABELA)
+      .select('organization_id')
+      .eq('id', templateId)
+      .maybeSingle();
+    if (errLeitura || !linha) throw new Error(errLeitura?.message ?? 'Template não encontrado');
+
+    const { error: errLimpar } = await supabase
+      .from(TABELA)
+      .update({ is_default: false })
+      .eq('organization_id', linha.organization_id)
+      .eq('is_default', true);
+    if (errLimpar) throw new Error(errLimpar.message);
+
+    // 2. promover (e re-activar) a linha escolhida
+    const { error: errPromover } = await supabase
+      .from(TABELA)
+      .update({ is_default: true, is_active: true })
+      .eq('id', templateId);
+    if (errPromover) throw new Error(errPromover.message);
+  },
+
+  /** Activa/desactiva uma linha (desactivar default = fallback imediato). */
+  async definirActivo(templateId: string, is_active: boolean): Promise<void> {
+    const { error } = await supabase
+      .from(TABELA)
+      .update({ is_active })
+      .eq('id', templateId);
+    if (error) throw new Error(error.message);
+  },
+
+  /** Remove a linha (higiene; CASCADE org já cobre o delete da org). */
+  async remover(templateId: string): Promise<void> {
+    const { error } = await supabase
+      .from(TABELA)
+      .delete()
+      .eq('id', templateId);
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Cria uma linha para a org a partir de um modelo base do registry
+   * (operação "adicionar modelo ao tenant"). Se marcar default,
+   * limpa o default anterior ANTES de inserir (ordem de segurança
+   * do índice único parcial).
+   */
+  async criar(input: {
+    organization_id: string;
+    template_key: PdfTemplateId;
+    nome?: string;
+    origem?: OrigemTemplate;
+    is_default?: boolean;
+  }): Promise<OrganizationTemplate> {
+    const nome = input.nome?.trim() || obterTemplateInfo(input.template_key).nome;
+
+    if (input.is_default) {
+      const { error: errLimpar } = await supabase
+        .from(TABELA)
+        .update({ is_default: false })
+        .eq('organization_id', input.organization_id)
+        .eq('is_default', true);
+      if (errLimpar) throw new Error(errLimpar.message);
+    }
+
+    const { data, error } = await supabase
+      .from(TABELA)
+      .insert({
+        organization_id: input.organization_id,
+        template_key: input.template_key,
+        nome,
+        origem: input.origem ?? 'adquirido',
+        is_active: true,
+        is_default: input.is_default ?? false,
+      })
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    return paraTemplate(data as Record<string, unknown>);
+  },
+};
+
+/** Chaves válidas para os selects da UI admin (fonte: registry em código) */
+export function chavesTemplatesDisponiveis(): { id: PdfTemplateId; nome: string }[] {
+  return TEMPLATES_PDF.map(t => ({ id: t.id, nome: t.nome }));
+}

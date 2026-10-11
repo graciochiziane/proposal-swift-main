@@ -3,7 +3,53 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light theme (default) */
   :root {
+    --background: 0 0% 100%;
+    --foreground: 215 25% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 12%;
+
+    --primary: 160 84% 39%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 215 25% 27%;
+
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 160 84% 39%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 20% 90%;
+    --input: 214 20% 90%;
+    --ring: 160 84% 39%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 215 25% 27%;
+    --sidebar-primary: 160 84% 39%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 96%;
+    --sidebar-accent-foreground: 215 25% 27%;
+    --sidebar-border: 214 20% 90%;
+    --sidebar-ring: 160 84% 39%;
+
+    --neon-glow: 0 0 20px hsl(160 84% 39% / 0.15), 0 0 40px hsl(160 84% 39% / 0.05);
+    --card-shadow: 0 1px 3px hsl(0 0% 0% / 0.06), 0 1px 2px hsl(0 0% 0% / 0.04);
+  }
+
+  /* Dark theme */
+  .dark {
     --background: 216 30% 6%;
     --foreground: 210 20% 90%;
 
@@ -31,8 +77,6 @@
     --border: 215 15% 18%;
     --input: 215 15% 18%;
     --ring: 160 100% 50%;
-
-    --radius: 0.75rem;
 
     --sidebar-background: 215 25% 8%;
     --sidebar-foreground: 210 20% 85%;

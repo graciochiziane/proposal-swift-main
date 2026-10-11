@@ -1,19 +1,31 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Cliente } from '@/types';
+import { OrganizationService } from './organizationService';
 
 export const ClienteService = {
   /**
    * Obtém todos os clientes do utilizador atual
    */
   async getClientes(): Promise<Cliente[]> {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user) return [];
+    const orgId = await OrganizationService.getOrgIdForInsert();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('clients')
       .select('*')
-      .eq('owner_id', userData.user.id)
       .order('nome');
+
+    // Se tem org, filtrar por org
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    } else {
+      // Solo user: filtro explicito por owner_id (defence-in-depth)
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user) {
+        query = query.eq('owner_id', userData.user.id);
+      }
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Erro ao buscar clientes:', error);
@@ -38,10 +50,13 @@ export const ClienteService = {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) throw new Error('Utilizador não autenticado');
 
+    const orgId = await OrganizationService.getOrgIdForInsert();
+
     const { data, error } = await supabase
       .from('clients')
       .insert([{
         owner_id: userData.user.id,
+        organization_id: orgId,
         nome: cliente.nome,
         email: cliente.email || null,
         telefone: cliente.telefone || null,
@@ -106,5 +121,35 @@ export const ClienteService = {
       console.error('Erro ao remover cliente:', error);
       throw error;
     }
+  },
+
+  /**
+   * P1-FIX: Obtém um cliente específico por ID.
+   * Necessário para RevisaoProposta.tsx que chama getClienteById.
+   * Antes não existia — IA gerava propostas sem contexto do cliente.
+   */
+  async getClienteById(id: string): Promise<Cliente | null> {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar cliente:', error);
+      throw error;
+    }
+
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      nome: data.nome,
+      email: data.email || '',
+      telefone: data.telefone || '',
+      empresa: data.empresa || '',
+      nuit: data.nuit || '',
+      endereco: data.endereco || '',
+    };
   }
 };

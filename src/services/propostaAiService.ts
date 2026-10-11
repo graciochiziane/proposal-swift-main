@@ -45,18 +45,11 @@ export interface GenerateResult {
 }
 
 // ---- Labels ----
+// Labels canónicas extraídas para src/lib/seccoes.ts (módulo puro,
+// partilhado com o conversor de PDF); re-exportadas aqui para
+// manter os imports existentes.
 
-export const SECTION_LABELS: Record<string, string> = {
-  contexto: 'Contexto do Cliente',
-  problema: 'Problema Identificado',
-  solucao: 'Solucao Proposta',
-  beneficios: 'Beneficios Esperados',
-  impacto: 'Impacto Quantificavel',
-  escopo: 'Escopo Detalhado',
-  cronograma: 'Cronograma',
-  condicoes: 'Condicoes Especiais',
-  investimento: 'Resumo de Investimento',
-};
+export { SECTION_LABELS } from '@/lib/seccoes';
 
 export const BASE_FIELDS = ['contexto', 'problema', 'solucao', 'beneficios'] as const;
 export const ADVANCED_FIELDS = ['impacto', 'escopo', 'cronograma', 'condicoes'] as const;
@@ -116,17 +109,22 @@ export const propostaAiService = {
     });
 
     if (error) {
-      console.error('Edge function error [status]:', error.message);
-      // Tenta extrair mensagem detalhada do erro
-      const detail = (error as any).context?.status || '';
-      const msg = detail
-        ? `Erro ${detail}: ${error.message}`
-        : error.message || 'Erro ao gerar proposta';
+      // Erro de rede/transporte (edge function nao reached)
+      console.error('Edge function transport error:', error);
+      const httpStatus = (error as { context?: { status?: number } }).context?.status;
+      const msg = httpStatus
+        ? `Erro ${httpStatus}: ${error.message}`
+        : error.message || 'Erro ao contactar o servidor';
       throw new Error(msg);
     }
 
+    // Erro logico retornado pela Edge Function (agora vem dentro de data.error)
     if (data?.error) {
-      throw new Error(data.error);
+      const step = data.step ? `[${data.step}] ` : '';
+      const detail = data.detail ? ` — ${data.detail}` : '';
+      const errorType = data.errorType && data.errorType !== 'Error' ? ` (${data.errorType})` : '';
+      console.error('Edge function logical error:', { step: data.step, error: data.error, detail: data.detail });
+      throw new Error(`${step}${data.error}${detail}${errorType}`);
     }
 
     return data as GenerateResult;

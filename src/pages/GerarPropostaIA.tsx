@@ -1,9 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
-import { ProfileService } from '@/services/profileService';
+import { IssuerService } from '@/services/issuerService';
 import { propostaAiService, SECTION_LABELS, BASE_FIELDS, ADVANCED_FIELDS, TOM_OPTIONS, SECTOR_OPTIONS, FIELD_PLACEHOLDERS, type GeracaoMode, type TomNarrativa, type PropostaAiFields } from '@/services/propostaAiService';
-import { gerarPDFNarrativa } from '@/lib/pdf';
+import { construirDadosNarrativaPdf, baixarPropostaPdf, previsualizarPdf, obterTemplateDefault, definirTemplateDefault, TEMPLATES_PDF, resolverLogotipoParaPdf, templatesVisiveisPara, obterTemplateInfo } from '@/lib/pdf';
+import { anexarCamposPersonalizados } from '@/services/organizationCustomFieldService';
+import type { PdfTemplateId } from '@/lib/pdf';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,16 +16,19 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import {
   Loader2, Sparkles, FileText, RotateCw, Save,
-  FileDown, ArrowLeft, Eye, EyeOff, Info, Zap,
+  ArrowLeft, Info, Eye,
   CheckCircle2, ChevronRight, Download, FileSpreadsheet,
 } from 'lucide-react';
 import { calcularTotal } from '@/lib/calculos';
+import { useAuth } from '@/hooks/useAuth';
+import { OrganizationTemplateService } from '@/services/organizationTemplateService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import type { DonoProposta } from '@/types';
 
 export default function GerarPropostaIA() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { organization } = useAuth();
 
   // Data state
   const [proposta, setProposta] = useState<PropostaCompleta | null>(null);
@@ -47,7 +52,7 @@ export default function GerarPropostaIA() {
   const [editBuffer, setEditBuffer] = useState<Record<string, string>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [, setStep] = useState<1 | 2 | 3>(1);
 
   // Auto-detect sector from cotation items
   useEffect(() => {
@@ -64,7 +69,7 @@ export default function GerarPropostaIA() {
       try {
         const [propData, donoData] = await Promise.all([
           PropostaService.getPropostaById(id as string),
-          ProfileService.getProfile(),
+          IssuerService.getIssuer(),
         ]);
         setProposta(propData);
         setDono(donoData);
@@ -89,6 +94,13 @@ export default function GerarPropostaIA() {
         if (existing.tone) setTone(existing.tone);
         if (existing.sector) setSector(existing.sector);
         if (existing.input_json) setFields(existing.input_json);
+        // Restaurar toggles: seccoes que estao no output estavam incluidas
+        const outputKeys = existing.edited_json || existing.output_json || {};
+        const restoredToggles: Record<string, boolean> = {};
+        for (const key of Object.keys(outputKeys)) {
+          if (key !== 'investimento') restoredToggles[key] = true;
+        }
+        setIncludedSections(prev => ({ ...prev, ...restoredToggles }));
         setStep(3);
       }
     })();
@@ -123,7 +135,7 @@ export default function GerarPropostaIA() {
 
     try {
       const filteredFields: PropostaAiFields = {};
-      for (const [key, value] of Object.entries(fields)) {
+      for (const [key, value] of Object.entries(fields) as [keyof PropostaAiFields, string | undefined][]) {
         if (includedSections[key] !== false && value?.trim()) {
           filteredFields[key] = value;
         }
@@ -155,7 +167,7 @@ export default function GerarPropostaIA() {
 
     try {
       const filteredFields: PropostaAiFields = {};
-      for (const [key, value] of Object.entries(fields)) {
+      for (const [key, value] of Object.entries(fields) as [keyof PropostaAiFields, string | undefined][]) {
         if (includedSections[key] !== false && value?.trim()) {
           filteredFields[key] = value;
         }
@@ -212,13 +224,78 @@ export default function GerarPropostaIA() {
   };
 
   // ---- Export (Doc A = proposta narrativa, Doc B = cotacao) ----
+  // Doc A: PDF vectorial com o modelo escolhido no selector abaixo
+  // (a escolha é gravada como omissão global e obedecida aqui e no
+  // resto do app); a cotação (Doc B) é gerada no Resumo.
+  // Precedência do arranque: default da org (organization_templates)
+  // > preferência do user (localStorage) > 'executivo'.
   const [isExporting, setIsExporting] = useState(false);
+  // Estado inicial sanitizado contra o catálogo base: preferência
+  // pessoal restrita (ex.: talaService des-atribuído) degrada para
+  // 'executivo' — nunca arranca em modelo não disponível.
+  const [templateId, setTemplateId] = useState<PdfTemplateId>(() =>
+    obterTemplateDefault(templatesVisiveisPara(null).map(t => t.id)));
+  const templateManualRef = useRef(false);
+  // Catálogo visível para a org activa: modelos base + restritos atribuídos
+  const [catalogoVisivel, setCatalogoVisivel] = useState<PdfTemplateId[]>(() =>
+    templatesVisiveisPara(null).map(t => t.id),
+  );
 
-  const handleExportProposta = async () => {
+  // Arranque no default da org (queries leves, RLS-filtradas) +
+  // filtragem do catálogo às linhas atribuídas. Sem linhas/erro →
+  // catálogo base + preferência pessoal sanitizada (comportamento
+  // pré-resolver). Modelos restritos sem atribuição ficam invisíveis.
+  useEffect(() => {
+    const orgId = organization?.id;
+    if (!orgId) return;
+    let cancelado = false;
+    (async () => {
+      const chaves = await OrganizationTemplateService.chavesAtribuidasAtivas(orgId);
+      if (cancelado) return;
+      const visiveis = templatesVisiveisPara(chaves).map(t => t.id);
+      setCatalogoVisivel(visiveis);
+      const resolvido = await OrganizationTemplateService.resolverTemplateParaOrganizacao(
+        orgId,
+        obterTemplateDefault(visiveis),
+      );
+      if (cancelado) return;
+      setTemplateId(prev => {
+        if (!visiveis.includes(prev)) {
+          return visiveis.includes(resolvido) ? resolvido : 'executivo';
+        }
+        if (!templateManualRef.current && visiveis.includes(resolvido)) {
+          return resolvido;
+        }
+        return prev;
+      });
+    })();
+    return () => { cancelado = true; };
+  }, [organization?.id]);
+
+  /** A escolha do modelo é imediata e passa a ser a omissão do app. */
+  const handleTemplateChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    const novo = e.target.value as PdfTemplateId;
+    templateManualRef.current = true; // escolha manual ganha ao default da org
+    setTemplateId(novo);
+    definirTemplateDefault(novo);
+  };
+
+  const handleExportProposta = async (modo: 'download' | 'preview' = 'download') => {
     if (!proposta || !dono || !seccoes) return;
     setIsExporting(true);
     try {
-      await gerarPDFNarrativa(proposta, dono, seccoes);
+      // logotipo (URL assinada) → data URL para o jsPDF embutir;
+      // campos personalizados da org para modelos que os usam (talaService)
+      const dados = await anexarCamposPersonalizados(
+        await resolverLogotipoParaPdf(
+          construirDadosNarrativaPdf(proposta, dono, seccoes, includedSections),
+        ),
+      );
+      if (modo === 'download') {
+        baixarPropostaPdf(dados, templateId);
+      } else {
+        previsualizarPdf(dados, templateId);
+      }
       if (propostaAiId) {
         try {
           await propostaAiService.markExported(propostaAiId);
@@ -226,7 +303,9 @@ export default function GerarPropostaIA() {
           console.warn('Falha ao marcar proposta como exportada (PDF gerado com sucesso)');
         }
       }
-      toast.success('Proposta comercial exportada (PDF)');
+      if (modo === 'download') {
+        toast.success('Proposta comercial exportada (PDF)');
+      }
     } catch (err) {
       console.error('Erro ao exportar PDF narrativo:', err);
       toast.error('Erro ao gerar PDF da proposta');
@@ -237,7 +316,7 @@ export default function GerarPropostaIA() {
 
   const handleExportCotacao = () => {
     if (!proposta || !dono) return;
-    toast.info('A abrir cotacao para exportar PDF...');
+    toast.info('A abrir cotacao para gerar PDF...');
     navigate(`/proposta/${id}`);
   };
 
@@ -513,6 +592,21 @@ export default function GerarPropostaIA() {
         <div className="flex items-center gap-2">
           {seccoes && !isGenerating && (
             <Fragment>
+              <select
+                value={templateId}
+                onChange={handleTemplateChange}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
+                title="Modelo PDF da proposta — a escolha passa a ser a omissão"
+              >
+                {catalogoVisivel.map(id => {
+                  const t = obterTemplateInfo(id);
+                  return (
+                    <option key={id} value={id}>
+                      Modelo: {t.nome}
+                    </option>
+                  );
+                })}
+              </select>
               <Button
                 variant="outline"
                 size="sm"
@@ -523,8 +617,18 @@ export default function GerarPropostaIA() {
                 Cotacao (PDF)
               </Button>
               <Button
+                variant="outline"
                 size="sm"
-                onClick={handleExportProposta}
+                onClick={() => handleExportProposta('preview')}
+                disabled={isExporting}
+                className="gap-1.5"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Pré-visualizar
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleExportProposta('download')}
                 disabled={isExporting}
                 className="gap-1.5 bg-violet-600 hover:bg-violet-700"
               >

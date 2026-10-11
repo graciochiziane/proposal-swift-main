@@ -6,13 +6,16 @@ import { toast } from 'sonner';
 import {
   Shield,
   User as UserIcon,
-  Settings,
   CreditCard,
   ShieldCheck,
   Moon,
+  Sun,
   HelpCircle,
   LogOut,
+  Building2,
+  Check,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +24,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
+function ThemeToggle() {
+  const { setTheme, resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+
+  const toggle = () => setTheme(isDark ? 'light' : 'dark');
+
+  return (
+    <DropdownMenuItem onClick={toggle}>
+      {isDark ? (
+        <Sun className="mr-2 h-4 w-4" />
+      ) : (
+        <Moon className="mr-2 h-4 w-4" />
+      )}
+      {isDark ? 'Tema Claro' : 'Tema Escuro'}
+    </DropdownMenuItem>
+  );
+}
 
 interface ProfileData {
   nome: string | null;
@@ -57,7 +78,7 @@ function planBadgeClasses(plano: string): string {
 }
 
 export default function UserProfile({ compact = false }: { compact?: boolean }) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, organization, orgRole, memberships, setActiveOrganization } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -176,16 +197,47 @@ export default function UserProfile({ compact = false }: { compact?: boolean }) 
 
         <DropdownMenuSeparator />
 
+        {/* Org Switcher (multi-org) */}
+        {memberships.length > 1 && (
+          <>
+            <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+              Organizacoes
+            </DropdownMenuLabel>
+            {memberships.map((m) => (
+              <DropdownMenuItem
+                key={m.organization_id}
+                onClick={() => {
+                  setActiveOrganization(m.organization_id);
+                  toast.success(`Org activa: ${m.organization.nome}`);
+                }}
+                className={m.organization_id === organization?.id ? 'bg-accent/50' : ''}
+              >
+                <Building2 className="mr-2 h-4 w-4 shrink-0" />
+                <span className="truncate flex-1">{m.organization.nome}</span>
+                {m.organization_id === organization?.id && (
+                  <Check className="h-3.5 w-3.5 text-primary shrink-0" />
+                )}
+                <span className="text-[10px] text-muted-foreground ml-1">{m.role}</span>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+          </>
+        )}
+
+        <DropdownMenuItem onClick={() => go('/organizacao')}>
+          <Building2 className="mr-2 h-4 w-4" />
+          Organizacao
+          {orgRole && (
+            <span className="ml-auto text-[10px] text-muted-foreground">{orgRole}</span>
+          )}
+        </DropdownMenuItem>
+
         {/* Conta */}
-        <DropdownMenuItem onClick={() => go('/configuracoes')}>
+        <DropdownMenuItem onClick={() => go('/perfil')}>
           <UserIcon className="mr-2 h-4 w-4" />
           Meu Perfil
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => go('/configuracoes')}>
-          <Settings className="mr-2 h-4 w-4" />
-          Configurações
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => soon('Plano & Faturação')}>
+        <DropdownMenuItem onClick={() => go('/organizacao?tab=plano')}>
           <CreditCard className="mr-2 h-4 w-4" />
           Plano & Faturação
         </DropdownMenuItem>
@@ -203,10 +255,7 @@ export default function UserProfile({ compact = false }: { compact?: boolean }) 
         <DropdownMenuSeparator />
 
         {/* Preferências */}
-        <DropdownMenuItem onClick={() => soon('Tema')}>
-          <Moon className="mr-2 h-4 w-4" />
-          Tema (claro/escuro)
-        </DropdownMenuItem>
+        <ThemeToggle />
         <DropdownMenuItem onClick={() => soon('Ajuda & Suporte')}>
           <HelpCircle className="mr-2 h-4 w-4" />
           Ajuda & Suporte

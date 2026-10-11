@@ -1,19 +1,47 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
-import { ProfileService } from '@/services/profileService';
+import { IssuerService } from '@/services/issuerService';
 import { calcularTotal } from '@/lib/calculos';
-import { gerarPDF } from '@/lib/pdf';
-import { FileDown, Pencil, Copy, Loader2, Sparkles } from 'lucide-react';
+import { TEMPLATES_PDF, previsualizarPdf, baixarPropostaPdf, construirDadosPdf, resolverLogotipoParaPdf, templatesVisiveisPara, obterTemplateInfo } from '@/lib/pdf';
+import { anexarCamposPersonalizados } from '@/services/organizationCustomFieldService';
+import type { PdfTemplateId } from '@/lib/pdf';
+import { propostaEmailService } from '@/services/propostaEmailService';
+import { CrmService } from '@/services/crmService';
+import { usePlanFeatures } from '@/hooks/usePlanFeatures';
+import { useAuth } from '@/hooks/useAuth';
+import { OrganizationTemplateService } from '@/services/organizationTemplateService';
+import { FileDown, Eye, Pencil, Copy, Loader2, Sparkles, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { converterPropostaEmFactura, getFaturasPorProposta, atualizarStatusFatura } from '@/services/faturaService';
-import type { PDFTemplate, Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
+import type { Cliente, DonoProposta, Fatura, StatusFatura } from '@/types';
 
 export default function ResumoProposta() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [template, setTemplate] = useState<PDFTemplate>('classic');
+  const { organization } = useAuth();
+  // Item 2 — gate do CRM por plano: evita tentativa de registo em orgs sem CRM
+  const { hasFeature } = usePlanFeatures();
+  // cotação abre por omissão no layout de referência (factura moderna);
+  // o selector continua a permitir trocar para Executivo/Editorial.
+  // Se a organização activa tiver default definido (organization_templates),
+  // o selector ARRANCA nesse modelo — a escolha manual do utilizador
+  // continua a ganhar depois disso (precedência: proposta > org > base).
+  const [templateId, setTemplateId] = useState<PdfTemplateId>('cotacao');
+  const templateManualRef = useRef(false);
+  // Catálogo visível para a org activa: modelos base + restritos atribuídos
+  const [catalogoVisivel, setCatalogoVisivel] = useState(() =>
+    templatesVisiveisPara(null).map(t => t.id),
+  );
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  // estado do modal de envio por email
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailPara, setEmailPara] = useState('');
+  const [emailAssunto, setEmailAssunto] = useState('');
+  const [emailMensagem, setEmailMensagem] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   const [proposta, setProposta] = useState<PropostaCompleta | null>(null);
   const [dono, setDono] = useState<DonoProposta | null>(null);
@@ -32,7 +60,7 @@ export default function ResumoProposta() {
       try {
         const [propData, donoData] = await Promise.all([
           PropostaService.getPropostaById(id as string),
-          ProfileService.getProfile(),
+          IssuerService.getIssuer(),
         ]);
         setProposta(propData);
         setDono(donoData);
@@ -45,6 +73,43 @@ export default function ResumoProposta() {
 
     loadData();
   }, [id]);
+
+  // Catálogo visível + default da org (uma carga por org):
+  // resolve o default de organization_templates quando a org
+  // activa for conhecida (queries leves, RLS-filtradas) e filtra
+  // o selector aos modelos atribuídos. Sem linhas/erro →
+  // 'cotacao' + só modelos base (comportamento pré-resolver).
+  // Modelos restritos sem atribuição ficam invisíveis e o selector
+  // actual é sanitizado (nunca usa modelo não atribuído). Trocas
+  // manuais posteriores estão confinadas às opções visíveis do
+  // próprio selector — sem re-queries.
+  useEffect(() => {
+    const orgId = organization?.id;
+    if (!orgId) return;
+    let cancelado = false;
+    (async () => {
+      const [chaves, resolvido] = await Promise.all([
+        OrganizationTemplateService.chavesAtribuidasAtivas(orgId),
+        OrganizationTemplateService.resolverTemplateParaOrganizacao(orgId, 'cotacao'),
+      ]);
+      if (cancelado) return;
+      const visiveis = templatesVisiveisPara(chaves).map(t => t.id);
+      setCatalogoVisivel(visiveis);
+      setTemplateId(prev => {
+        // sanitização: modelo corrente invisível → default da org/fallback
+        if (!visiveis.includes(prev)) {
+          return visiveis.includes(resolvido) ? resolvido : 'cotacao';
+        }
+        // default da org ganha apenas enquanto não houver escolha manual
+        // (guard extra: default resolvido tem de estar no catálogo visível)
+        if (!templateManualRef.current && resolvido !== 'cotacao' && visiveis.includes(resolvido)) {
+          return resolvido;
+        }
+        return prev;
+      });
+    })();
+    return () => { cancelado = true; };
+  }, [organization?.id]);
 
   useEffect(() => {
     if (!id) return;
@@ -71,12 +136,103 @@ export default function ResumoProposta() {
     ? calcularTotal(proposta.subtotal, proposta.descontoTipo, proposta.descontoValor, proposta.ivaPercentual)
     : { desconto: 0, baseTributavel: 0, iva: 0, total: 0 };
 
-  const handlePDF = () => {
+  /**
+   * Geração da proposta em PDF vectorial — único formato suportado.
+   * mode 'preview' abre numa nova janela; mode 'download'
+   * descarrega o ficheiro .pdf (pronto a enviar ao cliente).
+   */
+  const handleGerarPdf = async (mode: 'preview' | 'download') => {
     if (!proposta || !dono || !cliente) {
       toast.error('Dados não carregados');
       return;
     }
-    gerarPDF(proposta, cliente, dono, template);
+
+    setGeneratingPdf(true);
+    try {
+      // o logotipo chega como URL assinada do Storage — resolver para
+      // data URL antes de gerar (falha → fallback do nome da empresa);
+      // depois anexar os campos personalizados da org (ex.: talaService)
+      const dados = await anexarCamposPersonalizados(
+        await resolverLogotipoParaPdf(construirDadosPdf(proposta, cliente, dono)),
+      );
+      if (mode === 'download') {
+        baixarPropostaPdf(dados, templateId);
+        toast.success('Proposta PDF gerada com sucesso');
+      } else {
+        previsualizarPdf(dados, templateId);
+      }
+    } catch (err) {
+      toast.error('Erro ao gerar PDF: ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  // ---- Envio por email ----
+
+  const abrirEmailModal = () => {
+    if (!proposta || !dono) return;
+    setEmailPara(cliente?.email || '');
+    setEmailAssunto(`Proposta ${proposta.numero} — ${dono.empresa || dono.nome}`);
+    setEmailMensagem(
+      `Olá ${cliente?.nome || ''},\n\nSegue em anexo a nossa proposta comercial.\n\nCumprimentos,\n${dono.empresa || dono.nome}`,
+    );
+    setShowEmailModal(true);
+  };
+
+  const handleEnviarEmail = async () => {
+    if (!proposta || !dono || !cliente) return;
+    if (!emailPara.trim()) {
+      toast.error('Indique o email do destinatário');
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const dados = construirDadosPdf(proposta, cliente, dono);
+      const resultado = await propostaEmailService.enviar({
+        dados,
+        templateId,
+        para: emailPara,
+        assunto: emailAssunto,
+        mensagem: emailMensagem,
+      });
+
+      if (resultado.sucesso && !resultado.avisoSemApiChave) {
+        toast.success(`Proposta enviada para ${emailPara}`);
+        setShowEmailModal(false);
+        // marcar como enviada (se ainda rascunho)
+        if (proposta.status === 'rascunho') {
+          try {
+            await PropostaService.atualizarStatus(proposta.id, 'enviada');
+            setProposta(prev => (prev ? { ...prev, status: 'enviada' } : prev));
+          } catch {
+            console.warn('Falha ao actualizar status para enviada (email enviado)');
+          }
+        }
+        // Item 2 — registo automático da actividade no CRM.
+        // Nunca bloqueia o envio: o email JÁ foi enviado com sucesso;
+        // uma falha aqui é registada e ignorada (o envio continua válido).
+        if (cliente.id && hasFeature('crm_access')) {
+          try {
+            await CrmService.createActivity({
+              client_id: cliente.id,
+              proposal_id: proposta.id,
+              type: 'proposta_enviada',
+              title: `Proposta ${proposta.numero} enviada por email`,
+              description: `Destinatário: ${emailPara.trim()}`,
+            });
+          } catch (crmErr) {
+            console.warn('CRM: falha ao registar actividade de proposta enviada (envio bem-sucedido):', crmErr);
+          }
+        }
+      } else if (resultado.avisoSemApiChave) {
+        toast.info('O email não foi enviado: o serviço de email não está configurado (RESEND_API_KEY em falta no Supabase).');
+      } else {
+        toast.error(resultado.erro || 'Falha ao enviar email');
+      }
+    } finally {
+      setSendingEmail(false);
+    }
   };
 
   const handleDuplicar = async () => {
@@ -172,7 +328,7 @@ export default function ResumoProposta() {
           <h1 className="text-2xl font-bold mt-1">
             Proposta — {cliente?.nome || 'Cliente removido'}
           </h1>
-          <p className="text-sm text-muted-foreground">{new Date(proposta.data).toLocaleDateString('pt-BR')}</p>
+          <p className="text-sm text-muted-foreground">{new Date(proposta.data).toLocaleDateString('pt-MZ')}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {proposta?.status === 'aceite' && (
@@ -195,20 +351,22 @@ export default function ResumoProposta() {
             </button>
           )}
           <select
-            className="px-3 py-2 rounded-lg bg-secondary border border-border text-sm"
-            value={template}
-            onChange={e => setTemplate(e.target.value as PDFTemplate)}
+            value={templateId}
+            onChange={e => {
+              templateManualRef.current = true; // escolha manual ganha ao default da org
+              setTemplateId(e.target.value as PdfTemplateId);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors cursor-pointer"
+            title="Modelo PDF da proposta"
           >
-            <optgroup label="Gratuito">
-              <option value="classic">Clássico</option>
-              <option value="modern">Moderno</option>
-              <option value="executive">Executivo</option>
-            </optgroup>
-            <optgroup label="PRO">
-              <option value="sleek">Sleek</option>
-              <option value="sidebar">Sidebar</option>
-              <option value="business">Business</option>
-            </optgroup>
+            {catalogoVisivel.map(id => {
+              const t = obterTemplateInfo(id);
+              return (
+                <option key={id} value={id}>
+                  Modelo: {t.nome}
+                </option>
+              );
+            })}
           </select>
           <button
             onClick={() => navigate(`/proposta/${proposta.id}/gerar-ia`)}
@@ -218,11 +376,30 @@ export default function ResumoProposta() {
             Proposta IA
           </button>
           <button
-            onClick={handlePDF}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition-all"
+            onClick={() => handleGerarPdf('preview')}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors"
+            title="Abrir a proposta PDF numa nova janela"
           >
-            <FileDown className="h-4 w-4" />
-            PDF
+            <Eye className="h-4 w-4" />
+            Pré-visualizar
+          </button>
+          <button
+            onClick={() => handleGerarPdf('download')}
+            disabled={generatingPdf}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border text-sm font-semibold hover:bg-secondary/80 transition-colors disabled:opacity-50"
+            title="Descarregar a proposta como ficheiro PDF"
+          >
+            {generatingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            {generatingPdf ? 'A gerar...' : 'Baixar PDF'}
+          </button>
+          <button
+            onClick={abrirEmailModal}
+            disabled={sendingEmail}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition-all disabled:opacity-50"
+            title="Enviar a proposta PDF por email ao cliente"
+          >
+            <Send className="h-4 w-4" />
+            Enviar Email
           </button>
           <button
             onClick={() => navigate(`/proposta/editar/${proposta.id}`)}
@@ -481,6 +658,137 @@ export default function ResumoProposta() {
                 }}
               >
                 {savingFatura ? 'A criar...' : 'Criar Factura'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEmailModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => !sendingEmail && setShowEmailModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: 'hsl(var(--card))',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '480px',
+              width: '90%',
+              border: '1px solid hsl(var(--border))',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginBottom: '6px', fontWeight: 700 }}>Enviar Proposta por Email</h3>
+            <p style={{ color: 'hsl(var(--muted-foreground))', fontSize: '14px', marginBottom: '18px' }}>
+              A proposta será gerada em PDF e enviada em anexo ao cliente.
+            </p>
+
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '14px' }}>
+              Destinatário (email) *
+            </label>
+            <input
+              type="email"
+              value={emailPara}
+              onChange={(e) => setEmailPara(e.target.value)}
+              placeholder="cliente@empresa.co.mz"
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '8px',
+                border: '1px solid hsl(var(--border))',
+                background: 'hsl(var(--background))',
+                color: 'hsl(var(--foreground))',
+                marginBottom: '14px',
+                fontSize: '14px',
+                boxSizing: 'border-box',
+              }}
+            />
+
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '14px' }}>
+              Assunto
+            </label>
+            <input
+              type="text"
+              value={emailAssunto}
+              onChange={(e) => setEmailAssunto(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '8px',
+                border: '1px solid hsl(var(--border))',
+                background: 'hsl(var(--background))',
+                color: 'hsl(var(--foreground))',
+                marginBottom: '14px',
+                fontSize: '14px',
+                boxSizing: 'border-box',
+              }}
+            />
+
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '14px' }}>
+              Mensagem (opcional)
+            </label>
+            <textarea
+              value={emailMensagem}
+              onChange={(e) => setEmailMensagem(e.target.value)}
+              rows={5}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '8px',
+                border: '1px solid hsl(var(--border))',
+                background: 'hsl(var(--background))',
+                color: 'hsl(var(--foreground))',
+                marginBottom: '20px',
+                fontSize: '14px',
+                boxSizing: 'border-box',
+                resize: 'vertical',
+              }}
+            />
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowEmailModal(false)}
+                disabled={sendingEmail}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid hsl(var(--border))',
+                  background: 'transparent',
+                  cursor: sendingEmail ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleEnviarEmail}
+                disabled={sendingEmail || !emailPara.trim()}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: 'hsl(var(--primary))',
+                  color: 'hsl(var(--primary-foreground))',
+                  cursor: sendingEmail || !emailPara.trim() ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  opacity: sendingEmail || !emailPara.trim() ? 0.5 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                {sendingEmail ? 'A enviar...' : 'Enviar Proposta'}
               </button>
             </div>
           </div>

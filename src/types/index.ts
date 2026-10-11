@@ -37,8 +37,6 @@ export interface Proposta {
   created_at: string;
 }
 
-export type PDFTemplate = 'classic' | 'modern' | 'executive' | 'sleek' | 'sidebar' | 'business';
-
 export interface DadosBancarios {
   ativo: boolean;
   banco: string;
@@ -50,6 +48,18 @@ export interface MobileMoney {
   mpesa: { ativo: boolean; numero: string };
   emola: { ativo: boolean; numero: string };
   mkesh: { ativo: boolean; numero: string };
+}
+
+/**
+ * Forma de pagamento adicional criada pelo dono nas Configurações
+ * (dinâmica, não hardcoded) — ex.: "M-Pesa (Conta 2)", "PayPal".
+ * Guardada em profiles.pagamentos_extras (JSONB); opcional para
+ * compatibilidade com dados gravados antes da coluna existir.
+ */
+export interface PagamentoExtra {
+  rotulo: string;
+  valor: string;
+  ativo: boolean;
 }
 
 export interface CatalogoItem {
@@ -69,6 +79,13 @@ export interface DonoProposta {
   corPrimaria: string; // hex color
   dadosBancarios: DadosBancarios;
   mobileMoney: MobileMoney;
+  // Formas de pagamento adicionais definidas pelo dono (dinâmicas);
+  // aparecem no PDF depois das formas fixas acima.
+  pagamentosExtras?: PagamentoExtra[];
+  // Opcionais — impressos no bloco Emitente dos modelos PDF
+  // (ver src/lib/pdf/converter.ts)
+  email?: string;
+  telefone?: string;
 }
 
 // ===== TIPOS DE FATURA =====

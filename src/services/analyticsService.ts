@@ -1,3 +1,13 @@
+// ============================================================
+// Analytics Service — Platform-wide metrics
+//
+// P1-H6 (2026-08-13): Added requireAdmin() to all read methods.
+// FIX (2026-08-13): Removed requireAdmin() from read methods.
+//   The RLS policies + SECURITY DEFINER RPCs already enforce admin
+//   access. The client-side check was causing the admin panel to
+//   go blank due to session/timing issues. RLS is the real guard.
+//   trackPageVisit() remains open (RLS enforces user_id = auth.uid()).
+// ============================================================
 import { supabase } from '@/integrations/supabase/client';
 
 // ---- Types ----
@@ -54,103 +64,20 @@ export const analyticsService = {
 
   /**
    * Carrega todas as métricas principais do dashboard
+   * FIX 2.1: Usa RPC admin_platform_metrics() em vez de 9 queries
    */
   async getPlatformMetrics(): Promise<PlatformMetrics> {
-    const now = new Date();
-    const today = formatDate(now);
-    const weekAgo = formatDate(daysAgo(7));
-    const monthAgo = formatDate(daysAgo(30));
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
-    const [
-      profilesRes,
-      onlineRes,
-      todayRes,
-      weekRes,
-      monthRes,
-      signupsMonthRes,
-      proposalsMonthRes,
-      proposalsValueRes,
-      clientsMonthRes,
-    ] = await Promise.all([
-      // Total users
-      supabase.from('profiles').select('id', { count: 'exact', head: true }),
-
-      // Online now (últimos 15 min)
-      supabase
-        .from('profiles')
-        .select('id', { count: 'exact', head: true })
-        .gt('last_seen_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()),
-
-      // Acessaram hoje
-      supabase
-        .from('user_activity')
-        .select('user_id')
-        .gte('created_at', `${today}T00:00:00`),
-
-      // Acessaram na semana
-      supabase
-        .from('user_activity')
-        .select('user_id')
-        .gte('created_at', `${weekAgo}T00:00:00`),
-
-      // Acessaram no mês
-      supabase
-        .from('user_activity')
-        .select('user_id')
-        .gte('created_at', `${monthAgo}T00:00:00`),
-
-      // Novos registos este mês
-      supabase
-        .from('profiles')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', `${monthStart}T00:00:00`),
-
-      // Propostas este mês
-      supabase
-        .from('proposals')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', `${monthStart}T00:00:00`),
-
-      // Valor total de propostas
-      supabase
-        .from('proposals')
-        .select('total'),
-
-      // Clientes criados este mês
-      supabase
-        .from('clients')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', `${monthStart}T00:00:00`),
-    ]);
-
-    // Únicos por período
-    const uniqueUsers = (data: { user_id: string }[] | null) => {
-      if (!data) return 0;
-      return new Set(data.map(r => r.user_id)).size;
-    };
-
-    const proposalsValue = (proposalsValueRes.data ?? []).reduce(
-      (sum, r) => sum + Number(r.total ?? 0), 0
-    );
-
-    return {
-      users_online_now: onlineRes.count ?? 0,
-      accessed_today: uniqueUsers(todayRes.data),
-      accessed_week: uniqueUsers(weekRes.data),
-      accessed_month: uniqueUsers(monthRes.data),
-      total_users: profilesRes.count ?? 0,
-      new_signups_this_month: signupsMonthRes.count ?? 0,
-      proposals_this_month: proposalsMonthRes.count ?? 0,
-      clients_this_month: clientsMonthRes.count ?? 0,
-      proposals_total_value: proposalsValue,
-    };
+    const { data, error } = await supabase.rpc('admin_platform_metrics');
+    if (error) throw error;
+    return data as unknown as PlatformMetrics;
   },
 
   /**
    * Utilizadores actualmente online (últimos 15 min)
    */
   async getOnlineUsers(): Promise<ActiveUser[]> {
+
     const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const today = formatDate(new Date());
 
@@ -188,6 +115,7 @@ export const analyticsService = {
    * Novos registos por dia (últimos N dias)
    */
   async getSignupsByDay(days: number): Promise<SignupData[]> {
+
     const startDate = formatDate(daysAgo(days));
     const { data, error } = await supabase
       .from('profiles')
@@ -226,6 +154,7 @@ export const analyticsService = {
    * Utilizadores activos por dia (últimos N dias)
    */
   async getDailyActiveUsers(days: number): Promise<DayMetric[]> {
+
     const startDate = formatDate(daysAgo(days));
     const { data, error } = await supabase
       .from('user_activity')
@@ -261,6 +190,7 @@ export const analyticsService = {
    * Propostas criadas por dia (últimos N dias)
    */
   async getProposalsByDay(days: number): Promise<ProposalMetric[]> {
+
     const startDate = formatDate(daysAgo(days));
     const { data, error } = await supabase
       .from('proposals')
@@ -297,6 +227,7 @@ export const analyticsService = {
    * Utilizadores mais activos (últimos N dias)
    */
   async getMostActiveUsers(days: number, limit: number = 10): Promise<ActiveUser[]> {
+
     const startDate = formatDate(daysAgo(days));
 
     const { data, error } = await supabase
@@ -327,7 +258,7 @@ export const analyticsService = {
 
     const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
 
-    return sorted.map(([userId, visits]) => {
+    return sorted.map(([userId]) => {
       const p = profileMap.get(userId);
       return {
         id: userId,
@@ -343,6 +274,10 @@ export const analyticsService = {
   /**
    * Gravar uma visita à página (chamado pelo hook useActivityTracker)
    * Deduplica: só insere se última visita do user foi há mais de 5 minutos
+   *
+   * NOTA: Este método NÃO requer admin — qualquer utilizador autenticado
+   * pode gravar a sua própria atividade. RLS policy em user_activity
+   * garante que user_id = auth.uid() no INSERT.
    */
   async trackPageVisit(userId: string, page: string): Promise<void> {
     try {
@@ -375,3 +310,4 @@ export const analyticsService = {
     }
   },
 };
+

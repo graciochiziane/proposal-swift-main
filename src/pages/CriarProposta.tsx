@@ -1,17 +1,22 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Trash2, Bookmark, Loader2 } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Trash2, Bookmark, Loader2, UserPlus } from 'lucide-react';
 import { PropostaService, formatMZN } from '@/services/propostaService';
 import type { PropostaCompleta } from '@/services/propostaService';
 import { ClienteService } from '@/services/clienteService';
 import { CatalogService } from '@/services/catalogService';
 import { calcularSubtotal, calcularTotal } from '@/lib/calculos';
+import { QuickAddClienteModal } from '@/components/QuickAddClienteModal';
+import { ClienteCombobox } from '@/components/ClienteCombobox';
 import { toast } from 'sonner';
 import type { ItemProposta, DescontoTipo, Cliente, CatalogoItem } from '@/types';
 
 export default function CriarProposta() {
   const navigate = useNavigate();
   const { id } = useParams();
+  // Pré-selecção de cliente ao abrir a partir de um contacto (?cliente=<id>)
+  const [searchParams] = useSearchParams();
+  const clienteParam = searchParams.get('cliente');
 
   const [existente, setExistente] = useState<PropostaCompleta | null>(null);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -29,12 +34,12 @@ export default function CriarProposta() {
   const [ivaPercentual, setIvaPercentual] = useState(16);
   const [observacoes, setObservacoes] = useState('');
 
-  const [showQuickClient, setShowQuickClient] = useState(false);
-  const [quickNome, setQuickNome] = useState('');
+  const [showClienteModal, setShowClienteModal] = useState(false);
 
   const [catalogoOpen, setCatalogoOpen] = useState(false);
   const [catalogoFilter, setCatalogoFilter] = useState('');
   const [activeItemIndex, setActiveItemIndex] = useState(-1);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
   const catalogoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,6 +68,11 @@ export default function CriarProposta() {
 
         setClientes(clientesData);
         setCatalogo(catalogoData);
+
+        // Pré-seleccionar o cliente passado por query param (só em criação, não em edição)
+        if (!proposta && clienteParam && clientesData.some(cl => cl.id === clienteParam)) {
+          setClienteId(clienteParam);
+        }
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
         toast.error('Erro ao carregar dados');
@@ -71,7 +81,7 @@ export default function CriarProposta() {
       }
     }
     loadData();
-  }, [id]);
+  }, [id, clienteParam]);
 
   const subtotal = useMemo(() => calcularSubtotal(itens), [itens]);
   const totais = useMemo(
@@ -84,6 +94,13 @@ export default function CriarProposta() {
 
   const removeItem = (itemId: string) =>
     itens.length > 1 && setItens(prev => prev.filter(i => i.id !== itemId));
+
+  const fmtThousand = (n: number, decimals = 0) =>
+    n.toLocaleString('pt-MZ', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  const parseThousand = (s: string) => {
+    const c = s.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.');
+    return parseFloat(c) || 0;
+  };
 
   const updateItem = (itemId: string, field: keyof ItemProposta, value: string | number) => {
     setItens(prev => prev.map(item => {
@@ -121,22 +138,10 @@ export default function CriarProposta() {
     }
   };
 
-  const handleQuickClient = async () => {
-    if (!quickNome.trim()) return;
-    try {
-      const novo = await ClienteService.criarCliente({
-        nome: quickNome.trim(),
-        email: '', telefone: '', empresa: '', nuit: '', endereco: '',
-      });
-      setClientes(prev => [...prev, novo]);
-      setClienteId(novo.id);
-      setQuickNome('');
-      setShowQuickClient(false);
-      toast.success('Cliente adicionado');
-    } catch (error) {
-      console.error(error);
-      toast.error('Erro ao criar cliente');
-    }
+  const handleClienteCreated = (novoCliente: Cliente) => {
+    // Adicionar à lista de clientes e seleccionar automaticamente
+    setClientes(prev => [...prev, novoCliente]);
+    setClienteId(novoCliente.id);
   };
 
   const handleSave = async () => {
@@ -203,51 +208,22 @@ export default function CriarProposta() {
         <div>
           <label className={labelClass}>Cliente *</label>
           <div className="flex gap-2">
-            <select
-              className={inputClass + ' flex-1'}
+            <ClienteCombobox
+              clientes={clientes}
               value={clienteId}
-              onChange={e => setClienteId(e.target.value)}
-            >
-              <option value="">Selecionar cliente</option>
-              {clientes.map(c => (
-                <option key={c.id} value={c.id}>{c.nome}{c.empresa ? ` — ${c.empresa}` : ''}</option>
-              ))}
-            </select>
+              onChange={setClienteId}
+              className="flex-1"
+            />
             <button
               type="button"
-              onClick={() => setShowQuickClient(!showQuickClient)}
-              className="px-3 py-2 rounded-lg bg-secondary border border-border text-sm hover:bg-secondary/80 transition-colors whitespace-nowrap"
+              onClick={() => setShowClienteModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:brightness-110 transition-all whitespace-nowrap"
             >
-              + Novo
+              <UserPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">Novo Cliente</span>
+              <span className="sm:hidden">Novo</span>
             </button>
           </div>
-
-          {showQuickClient && (
-            <div className="mt-2 flex gap-2 animate-fade-up">
-              <input
-                className={inputClass + ' flex-1'}
-                placeholder="Nome do novo cliente"
-                value={quickNome}
-                onChange={e => setQuickNome(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleQuickClient()}
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={handleQuickClient}
-                className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:brightness-110 transition-all"
-              >
-                Adicionar
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowQuickClient(false); setQuickNome(''); }}
-                className="px-3 py-2 rounded-lg bg-secondary text-sm hover:bg-secondary/80 transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -278,97 +254,99 @@ export default function CriarProposta() {
           <label className="text-sm font-medium">Itens *</label>
           {itens.map((item, idx) => (
             <div key={item.id} className="relative space-y-2">
-              {/* Row 1: Nome - full width */}
-              <div className="relative" ref={idx === activeItemIndex ? catalogoRef : undefined}>
-                <input
-                  className={inputClass}
-                  placeholder="Nome do item"
-                  value={item.nome}
-                  onChange={e => {
-                    updateItem(item.id, 'nome', e.target.value);
-                    setCatalogoFilter(e.target.value);
-                    setCatalogoOpen(e.target.value.length > 0);
-                    setActiveItemIndex(idx);
-                  }}
-                  onFocus={() => {
-                    if (item.nome.length > 0) {
-                      setCatalogoFilter(item.nome);
-                      setCatalogoOpen(true);
+              {/* Row 1: Nome + Action icons */}
+              <div className="flex items-center gap-1" ref={idx === activeItemIndex ? catalogoRef : undefined}>
+                <div className="relative flex-1 min-w-0">
+                  <input
+                    className={inputClass}
+                    placeholder="Nome do item"
+                    value={item.nome}
+                    onChange={e => {
+                      updateItem(item.id, 'nome', e.target.value);
+                      setCatalogoFilter(e.target.value);
+                      setCatalogoOpen(e.target.value.length > 0);
                       setActiveItemIndex(idx);
-                    }
-                  }}
-                  onBlur={() => setTimeout(() => setCatalogoOpen(false), 200)}
-                />
-                {catalogoOpen && catalogoFiltrado.length > 0 && idx === activeItemIndex && (
-                  <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {catalogoFiltrado.slice(0, 8).map(catItem => (
-                      <button
-                        key={catItem.id}
-                        type="button"
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-secondary transition-colors flex justify-between items-center"
-                        onMouseDown={() => selectFromCatalogo(catItem, item.id)}
-                      >
-                        <span className="truncate">{catItem.nome}</span>
-                        <span className="text-muted-foreground text-xs ml-2 whitespace-nowrap">{formatMZN(catItem.precoUnitario)}</span>
-                      </button>
-                    ))}
-                  </div>
+                    }}
+                    onFocus={() => {
+                      if (item.nome.length > 0) {
+                        setCatalogoFilter(item.nome);
+                        setCatalogoOpen(true);
+                        setActiveItemIndex(idx);
+                      }
+                    }}
+                    onBlur={() => setTimeout(() => setCatalogoOpen(false), 200)}
+                  />
+                  {catalogoOpen && catalogoFiltrado.length > 0 && idx === activeItemIndex && (
+                    <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {catalogoFiltrado.slice(0, 8).map(catItem => (
+                        <button
+                          key={catItem.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-secondary transition-colors flex justify-between items-center"
+                          onMouseDown={() => selectFromCatalogo(catItem, item.id)}
+                        >
+                          <span className="truncate">{catItem.nome}</span>
+                          <span className="text-muted-foreground text-xs ml-2 whitespace-nowrap">{formatMZN(catItem.precoUnitario)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {item.nome.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => handleAddToCatalog(item)}
+                    className="p-2 md:p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors shrink-0"
+                    title="Salvar no catálogo"
+                  >
+                    <Bookmark className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                  </button>
+                )}
+                {itens.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeItem(item.id)}
+                    className="p-2 md:p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                    title="Remover item"
+                  >
+                    <Trash2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
+                  </button>
                 )}
               </div>
 
-              {/* Row 2: Qtd (20%) | Preço (35%) | Subtotal (35%) | Actions (10%) - desktop grid */}
-              <div className="grid grid-cols-12 gap-2 md:gap-2 items-end">
-                <div className="col-span-3">
+              {/* Row 2: Qtd | Preço | Subtotal */}
+              <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-2 items-end">
+                <div className="col-span-3 md:col-span-4">
                   <label className="text-xs text-muted-foreground mb-1 block md:hidden">Qtd</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     className={inputClass + ' text-center'}
-                    min="0"
-                    step="1"
-                    value={item.quantidade}
-                    onChange={e => updateItem(item.id, 'quantidade', Number(e.target.value))}
+                    value={focusedField === `${item.id}-qtd` ? String(item.quantidade) : (item.quantidade > 0 ? fmtThousand(item.quantidade) : '')}
+                    onFocus={() => setFocusedField(`${item.id}-qtd`)}
+                    onBlur={() => setFocusedField(null)}
+                    onChange={e => updateItem(item.id, 'quantidade', parseThousand(e.target.value))}
                     placeholder="Qtd"
                   />
                 </div>
-                <div className="col-span-4">
+                <div className="col-span-3 md:col-span-4">
                   <label className="text-xs text-muted-foreground mb-1 block md:hidden">Preço</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     className={inputClass + ' text-right'}
-                    min="0"
-                    step="0.01"
-                    value={item.precoUnitario}
-                    onChange={e => updateItem(item.id, 'precoUnitario', Number(e.target.value))}
+                    value={focusedField === `${item.id}-preco` ? String(item.precoUnitario) : (item.precoUnitario > 0 ? fmtThousand(item.precoUnitario, 2) : '')}
+                    onFocus={() => setFocusedField(`${item.id}-preco`)}
+                    onBlur={() => setFocusedField(null)}
+                    onChange={e => updateItem(item.id, 'precoUnitario', parseThousand(e.target.value))}
                     placeholder="Preço"
                   />
                 </div>
-                <div className="col-span-3 flex items-center justify-end">
-                  <label className="text-xs text-muted-foreground mb-1 block md:hidden w-full text-right">Subtotal</label>
-                  <span className="text-sm font-medium text-primary whitespace-nowrap truncate">
+                <div className="col-span-4">
+                  <label className="text-xs text-muted-foreground mb-1 block md:hidden">Subtotal</label>
+                  <div className="text-sm font-medium text-primary text-right flex items-center px-3 h-[calc(2.5rem+2px)]">
                     {formatMZN(item.subtotal)}
-                  </span>
-                </div>
-                <div className="col-span-2 flex items-center justify-end gap-1">
-                  {item.nome.trim() && (
-                    <button
-                      type="button"
-                      onClick={() => handleAddToCatalog(item)}
-                      className="p-2 md:p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-                      title="Salvar no catálogo"
-                    >
-                      <Bookmark className="h-4 w-4 md:h-3.5 md:w-3.5" />
-                    </button>
-                  )}
-                  {itens.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.id)}
-                      className="p-2 md:p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                      title="Remover item"
-                    >
-                      <Trash2 className="h-4 w-4 md:h-3.5 md:w-3.5" />
-                    </button>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -464,6 +442,13 @@ export default function CriarProposta() {
           Cancelar
         </button>
       </div>
+
+      {/* Modal de Criação Rápida de Cliente */}
+      <QuickAddClienteModal
+        open={showClienteModal}
+        onOpenChange={setShowClienteModal}
+        onClienteCreated={handleClienteCreated}
+      />
     </div>
   );
 }

@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment files (contain API keys and secrets)
+.env
+.env.staging
+.env.production
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,3 +27,21 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Sandbox artifacts
+repo-checkout/
+proposal-swift-main/
+tool-results/
+skills/
+AGENT_GUIDELINES.md
+playwright-fixture.ts
+bun.lockb
+
+# Test coverage output (M18 — added 2026-08-26)
+coverage/
+
+# TypeScript incremental build artifacts
+*.tsbuildinfo
+
+# Supabase CLI artifacts
+supabase/.temp/

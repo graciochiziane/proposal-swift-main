@@ -1,31 +1,14 @@
-import type { Proposta, Cliente, DonoProposta, PDFTemplate } from '@/types';
-import type { NarrativeSection } from './types';
-import { getTemplate } from './registry';
-import { gerarPDFNarrativa, seccoesToNarrative } from './narrativa';
+// ============================================================
+// Geração de Propostas em PDF — barrel público
+//
+// Único ponto de entrada do sistema de geração:
+// PDF vectorial com 3 templates (Cotação/Executivo/Editorial).
+// ============================================================
 
-/**
- * Generate PDF — unified entry point.
- * Uses the template registry. Falls back to 'classic' if unknown.
- *
- * All templates now support narrative sections (AI proposals).
- */
-export async function gerarPDF(
-  proposta: Proposta,
-  cliente?: Cliente,
-  dono?: DonoProposta,
-  template: PDFTemplate = 'classic',
-  narrative?: NarrativeSection[],
-) {
-  const entry = getTemplate(template);
-  await entry.render(proposta, cliente, dono, narrative);
-}
-
-/**
- * Generate standalone narrative PDF (Doc A — Proposta Comercial).
- * Contains only AI-generated narrative, no items table or totals.
- */
-export { gerarPDFNarrativa, seccoesToNarrative };
-
-/** Re-export for backward compatibility */
-export type { NarrativeSection } from './types';
-export { getAllTemplates, getTemplate, isProTemplate } from './registry';
+export type { PdfTemplateId, PdfTemplateInfo, DadosPropostaPdf, DadosPdfCliente, DadosPdfEmpresa, SecaoPdf, ItemPdf, TotaisPdf, PagamentoPdf } from './tipos';
+export { TEMPLATES_PDF, obterTemplateDefault, definirTemplateDefault, obterTemplateInfo, templatesVisiveisPara } from './templates';
+export { gerarPropostaPdf, baixarPropostaPdf, previsualizarPdf, pdfPropostaBase64, resolverLogotipoParaPdf } from './gerar';
+export { resolverTemplateParaOrg, chaveTemplateRegistada } from './resolver';
+export type { ConsultadorTemplateOrg } from './resolver';
+export { construirDadosPdf, construirDadosNarrativaPdf, converterDocumentoAvancado, seccoesParaPdf } from './converter';
+export { nomeFicheiroPdf } from './utils';

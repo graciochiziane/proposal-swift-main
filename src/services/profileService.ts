@@ -41,12 +41,20 @@ export const ProfileService = {
       cargo: data.cargo || '',
       empresa: data.empresa || '',
       contacto: data.contacto || '',
+      // email do utilizador autenticado (coluna NOT NULL em profiles) —
+      // alimenta o campo opcional DonoProposta.email (rodapés "Emitido por")
+      email: data.email || undefined,
       nuit: data.nuit || '',
       endereco: data.endereco || '',
       logotipo: logotipoUrl,
       corPrimaria: data.cor_primaria || '#0B5394',
-      dadosBancarios: data.dados_bancarios as DonoProposta['dadosBancarios'],
-      mobileMoney: data.mobile_money as DonoProposta['mobileMoney'],
+      // Colunas jsonb — o runtime devolve Json; narrowing para o tipo de domínio.
+      // Cast duplo documentado: fronteira BD Json -> tipo de domínio.
+      dadosBancarios: data.dados_bancarios as unknown as DonoProposta['dadosBancarios'],
+      mobileMoney: data.mobile_money as unknown as DonoProposta['mobileMoney'],
+      // Extras dinâmicos (coluna nova, default '[]' na BD; '?? []' cobre
+      // o intervalo em que a migração ainda não foi aplicada em staging)
+      pagamentosExtras: data.pagamentos_extras as unknown as DonoProposta['pagamentosExtras'] ?? [],
     };
   },
 
@@ -128,7 +136,7 @@ export const ProfileService = {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) throw new Error('Utilizador não autenticado');
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       nome: perfil.nome,
       cargo: perfil.cargo,
       empresa: perfil.empresa,
@@ -138,6 +146,7 @@ export const ProfileService = {
       cor_primaria: perfil.corPrimaria,
       dados_bancarios: perfil.dadosBancarios,
       mobile_money: perfil.mobileMoney,
+      pagamentos_extras: perfil.pagamentosExtras ?? [],
     };
 
     if (logoPath) {
@@ -147,6 +156,31 @@ export const ProfileService = {
     const { error } = await supabase
       .from('profiles')
       .update(updateData)
+      .eq('id', userData.user.id);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Actualiza APENAS os dados pessoais do emissor (Nome/Cargo/Contacto).
+   * Método estreito para a página /perfil — nunca toca nos campos da
+   * empresa/pagamentos, que agora pertencem à organização.
+   */
+  async updatePersonalProfile(dados: {
+    nome: string;
+    cargo: string;
+    contacto: string;
+  }): Promise<void> {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) throw new Error('Utilizador não autenticado');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        nome: dados.nome,
+        cargo: dados.cargo,
+        contacto: dados.contacto,
+      })
       .eq('id', userData.user.id);
 
     if (error) throw error;

@@ -2,15 +2,25 @@
 // Supabase Edge Function: generate-proposal
 // Recebe dados da cotacao + campos do formulario
 // Chama Google Gemini API para gerar narrativa estruturada
+//
+// P0-C4 (2026-08-13): Replaced CORS '*' with allowlist
 // ============================================================
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getCorsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { validateGeminiModel } from "../_shared/gemini.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+// Helper: retorna 200 com { error, step } para que o frontend receba os detalhes
+// (Supabase functions.invoke perde o body em respostas non-2xx)
+function errorResponse(message: string, step: string, corsHeaders: Record<string, string>, extra?: Record<string, unknown>) {
+  return new Response(
+    JSON.stringify({ error: message, step, ...extra }),
+    {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    }
+  );
+}
 
 // Mapa de tom para instrucao de estilo
 const TONE_INSTRUCTIONS: Record<string, string> = {
@@ -46,10 +56,11 @@ const BASE_SECTIONS = ["contexto", "problema", "solucao", "beneficios"];
 const ADVANCED_SECTIONS = ["impacto", "escopo", "cronograma", "condicoes"];
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
 
   const startTime = Date.now();
   let logContext = "INIT";
@@ -71,10 +82,18 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+
+    // Cliente com JWT do utilizador para respeitar RLS (acesso org-scoped)
+    // Usa anon key como API key (2º param) + override do Authorization com o JWT do user
+    // Pattern oficial: https://supabase.com/docs/guides/functions/auth#using-the-logged-in-users-jwt
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
     if (authErr || !user) {
       console.error("[STEP-FAIL] AUTH:", authErr?.message || "user null");
       return new Response(
@@ -93,34 +112,24 @@ Deno.serve(async (req) => {
     try {
       body = await req.json();
     } catch (parseErr) {
-      console.error("[STEP-FAIL] PARSE: body invalido", parseErr);
-      return new Response(
-        JSON.stringify({ error: "Corpo da requisicao invalido", step: "parse" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      console.error("[STEP-FAIL] PARSE: body invalido", parseMsg);
+      return errorResponse("Corpo da requisicao invalido: " + parseMsg, "parse", corsHeaders);
     }
 
     const { cotacaoId, fields, tone = "formal", mode = "rapido", sector, model: bodyModel } = body;
-    const model = bodyModel || "gemini-3.1-flash-lite";
+    // P1-H9: Validate model against allowlist (prevents cost injection)
+    const model = validateGeminiModel(bodyModel);
 
     if (!cotacaoId || !fields) {
       console.error("[STEP-FAIL] PARSE: cotacaoId ou fields em falta", { cotacaoId, hasFields: !!fields });
-      return new Response(
-        JSON.stringify({ error: "cotacaoId e fields sao obrigatorios", step: "parse" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return errorResponse("cotacaoId e fields sao obrigatorios (cotacaoId=" + (cotacaoId || "null") + ", hasFields=" + !!fields + ")", "parse", corsHeaders);
     }
     console.log(`[STEP-OK] PARSE: cotacaoId=${cotacaoId}, model=${model}, mode=${mode}, tone=${tone}`);
 
-    // ---- STEP 3: Load cotation data ----
+    // ---- STEP 3: Load cotation data (RLS org-scoped via supabaseUser) ----
     logContext = "DB_LOAD";
-    const { data: proposta, error: propError } = await supabase
+    const { data: proposta, error: propError } = await supabaseUser
       .from("proposals")
       .select(
         `
@@ -129,18 +138,11 @@ Deno.serve(async (req) => {
       `
       )
       .eq("id", cotacaoId)
-      .eq("owner_id", user.id)
       .single();
 
     if (propError || !proposta) {
       console.error("[STEP-FAIL] DB_LOAD:", propError?.message || "proposta null");
-      return new Response(
-        JSON.stringify({ error: "Cotacao nao encontrada", step: "db_load" }),
-        {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return errorResponse("Cotacao nao encontrada: " + (propError?.message || "sem resultados para cotacaoId=" + cotacaoId), "db_load", corsHeaders);
     }
     console.log(`[STEP-OK] DB_LOAD: proposta=${proposta.numero}, items=${proposta.proposal_items?.length || 0}, elapsed=${Date.now() - startTime}ms`);
 
@@ -168,29 +170,13 @@ Deno.serve(async (req) => {
       minimumFractionDigits: 2,
     });
 
-    // Determinar seccoes a gerar
-    const sections = mode === "assertivo" ? [...BASE_SECTIONS, ...ADVANCED_SECTIONS] : BASE_SECTIONS;
+    // Determinar seccoes a gerar: APENAS as que o utilizador incluiu (enviou no fields)
+    // O frontend ja filtra pelos toggles — se uma key nao existe em fields, o toggle estava OFF
+    const allPossibleSections = mode === "assertivo" ? [...BASE_SECTIONS, ...ADVANCED_SECTIONS] : BASE_SECTIONS;
+    const sections = allPossibleSections.filter((s) => fields[s] && fields[s].trim());
 
-    // Filtrar seccoes com conteudo fornecido pelo utilizador
-    const sectionDescriptions = sections
-      .filter((s) => fields[s] && fields[s].trim())
-      .map((s) => {
-        const labels: Record<string, string> = {
-          contexto: "Contexto do Cliente",
-          problema: "Problema Identificado",
-          solucao: "Solucao Proposta",
-          beneficios: "Beneficios Esperados",
-          impacto: "Impacto Quantificavel do Problema",
-          escopo: "Escopo Detalhado",
-          cronograma: "Cronograma",
-          condicoes: "Condicoes Especiais",
-        };
-        return `- ${labels[s] || s}: "${fields[s]}"`;
-      })
-      .join("\n");
-
-    // Seccoes que faltam (a IA deve gerar baseado nos dados disponiveis)
-    const missingSections = sections.filter((s) => !fields[s] || !fields[s].trim());
+    // Nao ha seccoes em falta — o utilizador escolheu explicitamente o que quer
+    // A IA deve gerar conteudo apenas para as seccoes fornecidas
 
     // A seccao investimento e sempre gerada automaticamente
     const investimentoSection = `O investimento total para este projecto e de ${totalFormatado} (IVA incluido). O detalhamento por modulos pode ser consultado na Cotacao N. ${proposta.numero}-FIN em anexo.`;
@@ -208,7 +194,7 @@ REGRAS CRITICAS (ANTI-ALUCINACAO):
 6. Escreva em portugues de Mocambique. NAO use emojis.
 7. Cada seccao deve ter 2-4 paragrafos substanciais (minimo 100 palavras por seccao).
 8. Use paragrafos bem estruturados, com topicos claros e progressao logica.
-${missingSections.length > 0 ? `9. As seguintes seccoes NAO foram preenchidas pelo utilizador - gere conteudo contextual com base nos dados da cotacao e info do cliente, mas seja generico: ${missingSections.join(", ")}` : ""}
+9. NAO gere seccoes que nao foram solicitadas. Gere APENAS: ${[...sections, "investimento"].join(", ")}.
 ${sections.includes("cronograma") ? `10. A seccao "cronograma" DEVE seguir este formato obrigatorio:
 - Primeiro, escreva 1-2 paragrafos de texto explicativo sobre a abordagem temporal do projecto.
 - Depois, inclua EXACTAMENTE esta marcacao seguida de uma tabela em formato pipe:
@@ -226,14 +212,16 @@ OUTPUT FORMATO:
 Responda APENAS com JSON valido (sem markdown, sem code fences) no seguinte formato:
 {
   "seccoes": {
-    "contexto": "...",
-    "problema": "...",
-    "solucao": "...",
-    "beneficios": "...",
-    ${mode === "assertivo" ? '"impacto": "...", "escopo": "...", "cronograma": "...", "condicoes": "...",' : ""}
+${sections.map((s) => `    "${s}": "..."`).join(",\n")},
     "investimento": "${investimentoSection}"
   }
-}`;
+}
+GERE APENAS as seccoes listadas acima. NAO adicione seccoes extra.`;
+
+    // Construir descricao das seccoes preenchidas pelo utilizador
+    const sectionDescriptions = sections
+      .map((s) => `- ${s}: ${fields[s] || "(nao preenchido)"}`)
+      .join("\n");
 
     const userPrompt = `CRIACAO DE PROPOSTA COMERCIAL
 
@@ -253,7 +241,7 @@ ${itemsList}
 ${proposta.observacoes ? `- Observacoes: ${proposta.observacoes}` : ""}
 
 CONTEUDO FORNECIDO PELO UTILIZADOR:
-${sectionDescriptions || "(Nenhum campo adicional preenchido - gere tudo com base nos dados acima)"}
+${sectionDescriptions}
 
 Gere a proposta seguindo as seccoes especificadas.`;
 
@@ -264,13 +252,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
       console.error("[STEP-FAIL] GEMINI_CALL: GEMINI_API_KEY nao configurada");
-      return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY nao configurada no Supabase", step: "gemini_call" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return errorResponse("GEMINI_API_KEY nao configurada no Supabase", "gemini_call", corsHeaders);
     }
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
@@ -301,13 +283,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
     } catch (fetchErr) {
       const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       console.error("[STEP-FAIL] GEMINI_CALL: fetch exception:", fetchMsg);
-      return new Response(
-        JSON.stringify({ error: `Falha ao conectar com a API Gemini: ${fetchMsg}`, step: "gemini_call" }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return errorResponse("Falha ao conectar com a API Gemini: " + fetchMsg, "gemini_call", corsHeaders);
     }
 
     console.log(`[STEP] GEMINI_CALL: HTTP status=${geminiResponse.status}, elapsed=${Date.now() - startTime}ms`);
@@ -323,17 +299,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
         status: geminiResponse.status,
         body: errBody.substring(0, 500),
       });
-      return new Response(
-        JSON.stringify({
-          error: `Erro na API Gemini: ${geminiResponse.status}`,
-          detail: errBody.substring(0, 300),
-          step: "gemini_call",
-        }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return errorResponse("Erro na API Gemini (HTTP " + geminiResponse.status + "): " + errBody.substring(0, 300), "gemini_call", corsHeaders);
     }
 
     // ---- STEP 6: Parse Gemini response ----
@@ -449,16 +415,20 @@ Gere a proposta seguindo as seccoes especificadas.`;
       parsedSections.investimento = investimentoSection;
     }
 
-    // ---- STEP 9: Save to DB ----
+    // ---- STEP 9: Save to DB (via supabaseUser para RLS) ----
     logContext = "DB_SAVE";
     const usageMeta = geminiData.usageMetadata || {};
     const totalTokens = usageMeta.totalTokenCount || 0;
 
-    const { data: saved, error: saveError } = await supabase
+    // Buscar organization_id da proposta para preencher na proposta_ai
+    const orgId = proposta.organization_id || null;
+
+    const { data: saved, error: saveError } = await supabaseUser
       .from("proposta_ai")
       .insert({
         cotacao_id: cotacaoId,
         user_id: user.id,
+        organization_id: orgId,
         referencia: proposta.numero,
         mode,
         tone,
@@ -467,7 +437,7 @@ Gere a proposta seguindo as seccoes especificadas.`;
         output_json: parsedSections,
         modelo: model,
         tokens_usados: totalTokens,
-        custo_usd: 0, // Gemini 2.0 Flash is free within usage limits
+        custo_usd: 0,
         gerado_em: new Date().toISOString(),
       })
       .select("id, referencia, created_at")
@@ -499,16 +469,13 @@ Gere a proposta seguindo as seccoes especificadas.`;
     );
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    // P1-H10: Stack traces are logged server-side only (not leaked to client)
     const errStack = err instanceof Error ? err.stack || "" : "";
     console.error(`[FATAL] logContext=${logContext}`, errMsg);
     console.error(`[FATAL] stack:`, errStack);
+    // P1-H10: Return only safe error message — no stack trace in response body
     return new Response(
-      JSON.stringify({
-        error: "Erro interno do servidor",
-        detail: errMsg,
-        step: logContext,
-        stack: errStack.split("\n").slice(0, 5).join(" | "),
-      }),
+      JSON.stringify({ error: "Erro interno do servidor", step: logContext }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
