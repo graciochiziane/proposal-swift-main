@@ -12,12 +12,16 @@
 // localhost noutros portos. Nenhuma delas era aceite pelo preflight
 // (sintoma idêntico à v11: "Failed to send a request to the Edge
 // Function" após 3 retries do propostaAiSectionService).
+// Fix 2026-10-14 (2): o utilizador apontou o domínio próprio
+// app.propostaja.co.mz para o projecto Vercel actual (proposal-swift-staging)
+// → origem dos pedidos passou a ser o domínio custom, ausente da allowlist
+// (mesmo sintoma: preflight 200 sem ACAO, POST bloqueado).
 // ============================================================
 
 /**
  * Allowed origins for CORS.
  * Add production and preview URLs here.
- * (Desenvolvimento local é coberto por ALLOWED_ORIGIN_PATTERNS.)
+ * (Previews Vercel e desenvolvimento local são cobertos por ALLOWED_ORIGIN_PATTERNS.)
  */
 export const ALLOWED_ORIGINS: readonly string[] = [
   // Production — projecto Vercel antigo (desactivado por billing em 2026-10-14;
@@ -25,8 +29,10 @@ export const ALLOWED_ORIGINS: readonly string[] = [
   "https://proposta2.vercel.app",
   // Projecto actual da marca PropostaJá
   "https://propostaja.vercel.app",
-  // Staging
+  // Staging (projecto Vercel actual)
   "https://proposal-swift-staging.vercel.app",
+  // Domínio próprio de produção da app (criado 2026-10-14, mesmo deployment)
+  "https://app.propostaja.co.mz",
 ];
 
 /**
@@ -36,13 +42,16 @@ export const ALLOWED_ORIGINS: readonly string[] = [
  * Idem para propostaja (marca) e proposal-swift-staging (staging).
  * Desenvolvimento local: localhost/127.0.0.1 em QUALQUER porto (o Vite
  * incrementa para 5174+ quando o 5173 está ocupado).
- * Mantém a postura P0-C4: apenas deployments do próprio projecto e
- * loopback local, nunca wildcard '*' nem origens arbitrárias de terceiros.
+ * Domínio próprio: propostaja.co.mz e qualquer subdomínio (app., www., ...).
+ * Mantém a postura P0-C4: apenas deployments do próprio projecto,
+ * domínio próprio da marca e loopback local, nunca wildcard '*' nem
+ * origens arbitrárias de terceiros.
  */
 const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
   /^https:\/\/proposta2-[a-z0-9-]+\.vercel\.app$/,
   /^https:\/\/propostaja-[a-z0-9-]+\.vercel\.app$/,
   /^https:\/\/proposal-swift-staging-[a-z0-9-]+\.vercel\.app$/,
+  /^https:\/\/([a-z0-9-]+\.)*propostaja\.co\.mz$/,
   /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
 ];
 
