@@ -16,6 +16,7 @@ import { desenharEditorial } from './templateEditorial';
 import { desenharCotacao } from './templateCotacao';
 import { desenharMinimal } from './templateMinimal';
 import { desenharTalaService } from './templateTalaService';
+import { desenharBelezaNatura } from './templateBelezaNatura';
 import { nomeFicheiroPdf } from './utils';
 
 /** Gera o documento PDF (vectorial) com o template indicado */
@@ -28,7 +29,9 @@ export function gerarPropostaPdf(dados: DadosPropostaPdf, templateId: PdfTemplat
         ? desenharMinimal(dados)
         : templateId === 'talaService'
           ? desenharTalaService(dados)
-          : desenharExecutivo(dados);
+          : templateId === 'belezaNatura'
+            ? desenharBelezaNatura(dados)
+            : desenharExecutivo(dados);
   return motor.doc;
 }
 

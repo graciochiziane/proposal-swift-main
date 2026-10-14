@@ -7,7 +7,7 @@
 // ============================================================
 
 /** Identificadores dos templates PDF incorporados */
-export type PdfTemplateId = 'executivo' | 'editorial' | 'cotacao' | 'minimal' | 'talaService';
+export type PdfTemplateId = 'executivo' | 'editorial' | 'cotacao' | 'minimal' | 'talaService' | 'belezaNatura';
 
 /** Metadados de um template (para galeria/selectores) */
 export interface PdfTemplateInfo {

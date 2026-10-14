@@ -351,7 +351,7 @@ export default function TemplateManager() {
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {catalogo.map(template => {
-          const cor = template.id === 'editorial' ? '#8A6D3B' : template.id === 'cotacao' ? '#F97316' : template.id === 'minimal' ? '#0F172A' : '#1F4E79';
+          const cor = template.id === 'editorial' ? '#8A6D3B' : template.id === 'cotacao' ? '#F97316' : template.id === 'minimal' ? '#0F172A' : template.id === 'belezaNatura' ? '#B8860B' : '#1F4E79';
           const activo = templateDefault === template.id;
           return (
             <Card

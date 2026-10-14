@@ -89,6 +89,27 @@ export const TEMPLATES_PDF: PdfTemplateInfo[] = [
       'Blocos sem dados desaparecem de forma elegante (nunca texto fictício)',
     ],
   },
+  {
+    id: 'belezaNatura',
+    nome: 'Beleza Natura (Elegância Premium)',
+    restrito: true,
+    descricao:
+      'Réplica data-driven do layout de referência «beleza natural»: estética '
+      + 'rosa e dourado com folha creme, faixa de cabeçalho com logótipo e caixa '
+      + 'de validade, título dourado espaçado, detalhes do cliente em linhas '
+      + 'etiquetadas, tabela de produtos com cabeçalho rosado, cartões de '
+      + 'condições e resumo financeiro com botões M-Pesa/e-Mola e banda de '
+      + 'agradecimento em dourado escuro. Modelo pago — disponível apenas por '
+      + 'atribuição do superadmin.',
+    caracteristicas: [
+      'Faixa de cabeçalho rosada com logótipo, NUIT e caixa de validade da proposta',
+      'Título dourado espaçado com subtítulo (slogan) da organização',
+      'Tabela de produtos com cabeçalho rosado e quantidade a dois dígitos',
+      'Cartões arredondados: condições dinâmicas + resumo financeiro com TOTAL destacado',
+      'Botões M-Pesa (verde) e e-Mola (laranja) só quando os métodos existem',
+      'Banda de rodapé dourada com agradecimento e contactos em todas as páginas',
+    ],
+  },
 ];
 
 export function obterTemplateInfo(id: PdfTemplateId): PdfTemplateInfo {
@@ -120,7 +141,7 @@ export function obterTemplateDefault(permitidas?: PdfTemplateId[]): PdfTemplateI
   let guardado: string | null = null;
   try {
     guardado = localStorage.getItem(CHAVE_DEFAULT);
-    if (guardado === 'executivo' || guardado === 'editorial' || guardado === 'cotacao' || guardado === 'minimal' || guardado === 'talaService') {
+    if (guardado === 'executivo' || guardado === 'editorial' || guardado === 'cotacao' || guardado === 'minimal' || guardado === 'talaService' || guardado === 'belezaNatura') {
       if (!permitidas || permitidas.includes(guardado)) return guardado;
     }
   } catch { /* localStorage indisponível */ }

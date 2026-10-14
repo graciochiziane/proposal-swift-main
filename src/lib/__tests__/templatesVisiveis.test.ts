@@ -62,6 +62,8 @@ describe('obterTemplateDefault com catálogo permitido', () => {
   it('preferência restrita DENTRO do permitido é respeitada', () => {
     definirTemplateDefault('talaService');
     expect(obterTemplateDefault(['executivo', 'talaService'])).toBe('talaService');
+    definirTemplateDefault('belezaNatura');
+    expect(obterTemplateDefault(['executivo', 'belezaNatura'])).toBe('belezaNatura');
   });
 
   it('sem lista de permitidas mantém o comportamento histórico', () => {
@@ -73,13 +75,22 @@ describe('obterTemplateDefault com catálogo permitido', () => {
 });
 
 describe('metadado restrito do registry', () => {
-  it('talaService é o único modelo restrito do catálogo', () => {
+  it('talaService e belezaNatura são os modelos restritos do catálogo', () => {
     const restritos = TEMPLATES_PDF.filter(t => t.restrito).map(t => t.id);
-    expect(restritos).toEqual(['talaService']);
+    expect(restritos).toEqual(['talaService', 'belezaNatura']);
   });
 
   it('obterTemplateInfo expõe o metadado restrito', () => {
     expect(obterTemplateInfo('talaService').restrito).toBe(true);
+    expect(obterTemplateInfo('belezaNatura').restrito).toBe(true);
     expect(obterTemplateInfo('executivo').restrito).toBeUndefined();
+  });
+
+  it('org com belezaNatura atribuído vê os base + belezaNatura', () => {
+    const visiveis = templatesVisiveisPara(['belezaNatura']);
+    const ids = visiveis.map(t => t.id);
+    expect(ids).toContain('belezaNatura');
+    expect(ids).not.toContain('talaService');
+    expect(ids.length).toBe(TEMPLATES_PDF.filter(t => !t.restrito).length + 1);
   });
 });
