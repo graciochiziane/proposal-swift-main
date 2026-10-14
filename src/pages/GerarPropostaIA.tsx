@@ -568,8 +568,11 @@ export default function GerarPropostaIA() {
       </Card>
 
       {/* ====== Action Bar ====== */}
+      {/* flex-wrap nos grupos internos: sem isto, os 5 botoes do grupo direito
+          ficam numa unica linha (~800px) e transbordam o viewport em mobile
+          (scroll horizontal em toda a pagina). No desktop nada muda. */}
       <div className="flex items-center justify-between gap-3 flex-wrap bg-card rounded-xl border border-border p-4 sticky bottom-4 shadow-lg">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             onClick={handleGenerate}
             disabled={isGenerating || ((!fields.contexto?.trim()) && (!fields.problema?.trim()))}
@@ -589,7 +592,7 @@ export default function GerarPropostaIA() {
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {seccoes && !isGenerating && (
             <Fragment>
               <select
